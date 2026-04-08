@@ -2,15 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>CIPQ Analytical System</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js">
-
-window.addEventListener('DOMContentLoaded', () => {
-  updateCounts();
-  renderEntryPreview();
-});
-</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
 
@@ -28,9 +22,15 @@ window.addEventListener('DOMContentLoaded', () => {
     --distribution: #2a6b6e;
     --access: #3a7a3a;
     --governance: #c8993a;
+    --shadow: 0 10px 30px rgba(26, 26, 46, 0.08);
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
 
   body {
     font-family: 'IBM Plex Sans', sans-serif;
@@ -38,9 +38,13 @@ window.addEventListener('DOMContentLoaded', () => {
     color: var(--ink);
     min-height: 100vh;
     line-height: 1.6;
+    overflow-x: hidden;
   }
 
-  /* HEADER */
+  img, table, iframe, canvas, svg {
+    max-width: 100%;
+  }
+
   header {
     background: var(--ink);
     color: var(--paper);
@@ -55,7 +59,7 @@ window.addEventListener('DOMContentLoaded', () => {
     right: -0.5rem;
     top: -1rem;
     font-family: 'Playfair Display', serif;
-    font-size: 9rem;
+    font-size: clamp(4rem, 16vw, 9rem);
     font-weight: 900;
     color: rgba(255,255,255,0.04);
     pointer-events: none;
@@ -63,28 +67,37 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   header h1 {
     font-family: 'Playfair Display', serif;
-    font-size: 1.9rem;
+    font-size: clamp(1.4rem, 4vw, 1.9rem);
     font-weight: 700;
     letter-spacing: -0.02em;
     line-height: 1.2;
+    max-width: 780px;
+    position: relative;
+    z-index: 1;
   }
   header p {
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.72rem;
+    font-size: clamp(0.68rem, 2vw, 0.72rem);
     color: var(--gold);
     margin-top: 0.4rem;
     letter-spacing: 0.1em;
     text-transform: uppercase;
+    position: relative;
+    z-index: 1;
+    padding-right: 2rem;
   }
 
-  /* TABS */
   nav {
     background: var(--cream);
     border-bottom: 2px solid var(--border);
     display: flex;
     gap: 0;
     overflow-x: auto;
-    padding: 0 2rem;
+    overflow-y: hidden;
+    padding: 0 clamp(0.75rem, 2vw, 2rem);
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scroll-snap-type: x proximity;
   }
   nav button {
     font-family: 'IBM Plex Mono', monospace;
@@ -99,6 +112,8 @@ window.addEventListener('DOMContentLoaded', () => {
     color: var(--muted);
     white-space: nowrap;
     transition: all 0.2s;
+    scroll-snap-align: start;
+    min-height: 48px;
   }
   nav button:hover { color: var(--ink); }
   nav button.active {
@@ -107,17 +122,20 @@ window.addEventListener('DOMContentLoaded', () => {
     font-weight: 500;
   }
 
-  /* MAIN */
-  main { padding: 2rem 2.5rem; max-width: 1300px; }
+  main {
+    padding: clamp(1rem, 3vw, 2rem) clamp(0.9rem, 3vw, 2.5rem) 2rem;
+    max-width: 1300px;
+    margin: 0 auto;
+    width: 100%;
+  }
 
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
 
-  /* UPLOAD ZONE */
   .upload-area {
     border: 2px dashed var(--border);
-    border-radius: 4px;
-    padding: 3rem 2rem;
+    border-radius: 12px;
+    padding: clamp(1.5rem, 5vw, 3rem) clamp(1rem, 4vw, 2rem);
     text-align: center;
     cursor: pointer;
     transition: all 0.2s;
@@ -129,56 +147,61 @@ window.addEventListener('DOMContentLoaded', () => {
     background: #e8f0f0;
   }
   .upload-area .icon {
-    font-size: 2.5rem;
+    font-size: clamp(2rem, 7vw, 2.5rem);
     margin-bottom: 0.8rem;
     display: block;
   }
   .upload-area h3 {
     font-family: 'Playfair Display', serif;
-    font-size: 1.2rem;
+    font-size: clamp(1.05rem, 4vw, 1.2rem);
     margin-bottom: 0.5rem;
   }
   .upload-area p {
     font-size: 0.85rem;
     color: var(--muted);
     font-family: 'IBM Plex Mono', monospace;
+    overflow-wrap: anywhere;
   }
   #fileInput { display: none; }
 
   .btn {
-    display: inline-block;
-    padding: 0.6rem 1.4rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    padding: 0.75rem 1.2rem;
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.78rem;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     border: none;
     cursor: pointer;
-    border-radius: 2px;
+    border-radius: 10px;
     transition: all 0.2s;
+    min-height: 46px;
+    text-align: center;
   }
   .btn-primary { background: var(--ink); color: var(--paper); }
   .btn-primary:hover { background: var(--rust); }
   .btn-secondary { background: var(--cream); color: var(--ink); border: 1px solid var(--border); }
   .btn-secondary:hover { border-color: var(--ink); }
 
-  /* STATUS BAR */
   #statusBar {
     display: none;
     background: var(--teal);
     color: white;
-    padding: 0.7rem 1.2rem;
-    border-radius: 2px;
+    padding: 0.85rem 1rem;
+    border-radius: 10px;
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.8rem;
     margin-bottom: 1.5rem;
+    word-break: break-word;
   }
   #statusBar.error { background: var(--rust); }
 
-  /* SECTION TITLES */
   .section-title {
     font-family: 'Playfair Display', serif;
-    font-size: 1.4rem;
+    font-size: clamp(1.15rem, 4vw, 1.4rem);
     font-weight: 700;
     margin-bottom: 1.2rem;
     padding-bottom: 0.5rem;
@@ -186,6 +209,7 @@ window.addEventListener('DOMContentLoaded', () => {
     display: flex;
     align-items: baseline;
     gap: 0.8rem;
+    flex-wrap: wrap;
   }
   .section-title span {
     font-family: 'IBM Plex Mono', monospace;
@@ -195,21 +219,21 @@ window.addEventListener('DOMContentLoaded', () => {
     letter-spacing: 0.1em;
   }
 
-  /* CIPQ INDEX HERO */
   .index-hero {
     background: var(--ink);
     color: var(--paper);
-    border-radius: 4px;
-    padding: 2rem 2.5rem;
+    border-radius: 14px;
+    padding: clamp(1.25rem, 4vw, 2rem);
     margin-bottom: 2rem;
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1.5rem;
     align-items: center;
-    gap: 3rem;
-    flex-wrap: wrap;
+    box-shadow: var(--shadow);
   }
   .index-hero .big-number {
     font-family: 'Playfair Display', serif;
-    font-size: 5rem;
+    font-size: clamp(3rem, 9vw, 5rem);
     font-weight: 900;
     line-height: 1;
     color: var(--gold);
@@ -229,7 +253,6 @@ window.addEventListener('DOMContentLoaded', () => {
     line-height: 1.5;
   }
 
-  /* DOMAIN CARDS */
   .domain-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -238,11 +261,12 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   .domain-card {
     background: white;
-    border-radius: 4px;
-    padding: 1.2rem 1.5rem;
+    border-radius: 12px;
+    padding: 1.2rem 1.2rem 1.1rem;
     border-top: 4px solid var(--border);
     position: relative;
     overflow: hidden;
+    box-shadow: var(--shadow);
   }
   .domain-card.creation { border-top-color: var(--creation); }
   .domain-card.production { border-top-color: var(--production); }
@@ -259,9 +283,10 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   .domain-card .d-score {
     font-family: 'Playfair Display', serif;
-    font-size: 2.4rem;
+    font-size: 2.25rem;
     font-weight: 700;
     line-height: 1;
+    word-break: break-word;
   }
   .domain-card.creation .d-score { color: var(--creation); }
   .domain-card.production .d-score { color: var(--production); }
@@ -276,23 +301,29 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   .domain-bar {
     margin-top: 0.8rem;
-    height: 4px;
+    height: 6px;
     background: var(--cream);
-    border-radius: 2px;
+    border-radius: 999px;
     overflow: hidden;
   }
   .domain-bar-fill {
     height: 100%;
-    border-radius: 2px;
+    border-radius: 999px;
     transition: width 1s ease;
   }
 
-  /* TABLE */
-  .table-wrap { overflow-x: auto; margin-bottom: 2rem; }
-  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .table-wrap {
+    overflow-x: auto;
+    margin-bottom: 2rem;
+    border-radius: 12px;
+    background: white;
+    box-shadow: var(--shadow);
+    -webkit-overflow-scrolling: touch;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; min-width: 720px; }
   thead tr { background: var(--ink); color: var(--paper); }
   thead th {
-    padding: 0.7rem 1rem;
+    padding: 0.85rem 1rem;
     text-align: left;
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.68rem;
@@ -302,16 +333,23 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   tbody tr { border-bottom: 1px solid var(--border); }
   tbody tr:hover { background: var(--cream); }
-  tbody td { padding: 0.65rem 1rem; vertical-align: middle; }
+  tbody td {
+    padding: 0.75rem 1rem;
+    vertical-align: middle;
+    overflow-wrap: anywhere;
+  }
+
   .tag {
-    display: inline-block;
-    padding: 0.15rem 0.5rem;
-    border-radius: 2px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.5rem;
+    border-radius: 999px;
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.68rem;
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.05em;
+    max-width: 100%;
   }
   .tag.creation { background: #f3e8f7; color: var(--creation); }
   .tag.production { background: #fdeee9; color: var(--production); }
@@ -320,9 +358,10 @@ window.addEventListener('DOMContentLoaded', () => {
   .tag.governance { background: #fdf4e3; color: var(--governance); }
 
   .priority-badge {
-    display: inline-block;
-    padding: 0.15rem 0.5rem;
-    border-radius: 2px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.65rem;
     font-weight: 500;
@@ -337,23 +376,24 @@ window.addEventListener('DOMContentLoaded', () => {
     align-items: center;
     gap: 0.5rem;
   }
-  .severity-pip {
-    width: 10px; height: 10px; border-radius: 50%;
-    display: inline-block;
-  }
   .sev-mini {
-    display: flex; gap: 2px;
+    display: flex;
+    gap: 3px;
+    align-items: center;
+    flex-wrap: nowrap;
   }
   .sev-dot {
-    width: 8px; height: 8px; border-radius: 1px;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
     background: var(--border);
+    flex: 0 0 auto;
   }
   .sev-dot.filled { background: var(--rust); }
 
-  /* ENTRY FORM */
   .form-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 1rem;
     margin-bottom: 1.5rem;
   }
@@ -364,50 +404,58 @@ window.addEventListener('DOMContentLoaded', () => {
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--muted);
-    margin-bottom: 0.3rem;
+    margin-bottom: 0.35rem;
   }
   .form-group input,
   .form-group select,
   .form-group textarea {
     width: 100%;
-    padding: 0.55rem 0.8rem;
+    padding: 0.7rem 0.8rem;
     font-family: 'IBM Plex Sans', sans-serif;
-    font-size: 0.85rem;
+    font-size: 0.95rem;
     border: 1px solid var(--border);
-    border-radius: 2px;
+    border-radius: 10px;
     background: white;
     color: var(--ink);
     outline: none;
-    transition: border-color 0.2s;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    min-height: 46px;
   }
   .form-group input:focus,
   .form-group select:focus,
   .form-group textarea:focus {
     border-color: var(--teal);
+    box-shadow: 0 0 0 3px rgba(42, 107, 110, 0.12);
   }
-  .form-group textarea { resize: vertical; min-height: 80px; }
+  .form-group textarea {
+    resize: vertical;
+    min-height: 110px;
+  }
   .form-group.full { grid-column: 1 / -1; }
 
-  /* SEVERITY PICKER */
-  .sev-picker { display: flex; gap: 0.5rem; }
+  .sev-picker {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
   .sev-picker button {
-    width: 36px; height: 36px;
+    width: 44px;
+    height: 44px;
     border: 1px solid var(--border);
-    border-radius: 2px;
+    border-radius: 10px;
     background: white;
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.85rem;
     cursor: pointer;
     transition: all 0.15s;
     color: var(--muted);
+    flex: 0 0 auto;
   }
   .sev-picker button:hover { border-color: var(--ink); color: var(--ink); }
   .sev-picker button.selected { background: var(--rust); border-color: var(--rust); color: white; font-weight: 600; }
 
-  /* PREVIEW TABLE (entry tab) */
   .entry-table-wrap { margin-top: 2rem; }
 
-  /* EMPTY STATE */
   .empty-state {
     text-align: center;
     padding: 4rem 2rem;
@@ -416,7 +464,6 @@ window.addEventListener('DOMContentLoaded', () => {
   .empty-state .icon { font-size: 3rem; margin-bottom: 1rem; display: block; }
   .empty-state p { font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; }
 
-  /* ACTIONS ROW */
   .actions-row {
     display: flex;
     gap: 0.8rem;
@@ -429,9 +476,9 @@ window.addEventListener('DOMContentLoaded', () => {
     font-size: 0.75rem;
     color: var(--muted);
     margin-left: auto;
+    min-width: fit-content;
   }
 
-  /* COMPARISON TABLE */
   .comp-table th:first-child, .comp-table td:first-child {
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.78rem;
@@ -446,19 +493,10 @@ window.addEventListener('DOMContentLoaded', () => {
   .comp-cell.mid { color: var(--gold); }
   .comp-cell.low { color: var(--teal); }
 
-  /* RESPONSIVE */
-  @media (max-width: 640px) {
-    main { padding: 1.5rem 1rem; }
-    header { padding: 1.5rem 1rem; }
-    nav { padding: 0 1rem; }
-    .index-hero { gap: 1.5rem; padding: 1.5rem; }
-    .index-hero .big-number { font-size: 3.5rem; }
-  }
-
   .no-data-msg {
     background: var(--cream);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 12px;
     padding: 2rem;
     text-align: center;
     font-family: 'IBM Plex Mono', monospace;
@@ -474,14 +512,15 @@ window.addEventListener('DOMContentLoaded', () => {
     align-items: center;
   }
   .filter-row select, .filter-row input {
-    padding: 0.45rem 0.7rem;
+    padding: 0.65rem 0.7rem;
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.75rem;
+    font-size: 0.78rem;
     border: 1px solid var(--border);
-    border-radius: 2px;
+    border-radius: 10px;
     background: white;
     color: var(--ink);
     outline: none;
+    min-height: 42px;
   }
   .filter-row label {
     font-family: 'IBM Plex Mono', monospace;
@@ -489,6 +528,127 @@ window.addEventListener('DOMContentLoaded', () => {
     color: var(--muted);
     text-transform: uppercase;
     letter-spacing: 0.06em;
+  }
+
+  @media (max-width: 1024px) {
+    .index-hero {
+      grid-template-columns: 1fr 1fr;
+    }
+    .index-hero > div:last-child {
+      grid-column: 1 / -1;
+      margin-left: 0;
+    }
+  }
+
+  @media (max-width: 768px) {
+    header {
+      padding: 1.25rem 1rem 1.15rem;
+    }
+
+    nav {
+      padding: 0 0.5rem;
+    }
+
+    nav button {
+      padding: 0.85rem 0.85rem;
+      font-size: 0.66rem;
+    }
+
+    main {
+      padding: 1rem 0.85rem 1.5rem;
+    }
+
+    .index-hero {
+      grid-template-columns: 1fr;
+      gap: 1rem;
+    }
+
+    .domain-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .actions-row {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .actions-row .btn {
+      width: 100%;
+    }
+
+    .actions-row .count-badge {
+      margin-left: 0;
+      text-align: center;
+      width: 100%;
+    }
+
+    .filter-row {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .filter-row label {
+      margin-bottom: -0.35rem;
+    }
+
+    .filter-row select,
+    .filter-row input {
+      width: 100%;
+    }
+
+    .form-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .section-title {
+      gap: 0.45rem;
+    }
+
+    .upload-area p,
+    #statusBar,
+    .no-data-msg {
+      font-size: 0.75rem;
+    }
+  }
+
+  @media (max-width: 560px) {
+    table,
+    .comp-table,
+    .table-wrap table {
+      min-width: 640px;
+    }
+
+    .domain-card .d-score {
+      font-size: 2rem;
+    }
+
+    .index-hero .desc {
+      max-width: 100%;
+    }
+
+    .sev-picker button {
+      flex: 1 1 calc(20% - 0.5rem);
+      min-width: 44px;
+    }
+  }
+
+  @media (max-width: 420px) {
+    header h1 br {
+      display: none;
+    }
+
+    header p {
+      letter-spacing: 0.06em;
+      padding-right: 0;
+    }
+
+    .upload-area {
+      border-radius: 10px;
+    }
+
+    .section-title span {
+      width: 100%;
+    }
   }
 </style>
 </head>
@@ -510,14 +670,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
 <main>
 
-  <!-- STATUS BAR -->
   <div id="statusBar"></div>
 
-  <!-- ===================== TAB: ENTRY ===================== -->
   <div id="tab-entry" class="tab-panel active">
     <div class="section-title">Data Entry <span>Encode narrative segments</span></div>
 
-    <!-- Upload CSV -->
     <div class="upload-area" id="uploadZone" onclick="document.getElementById('fileInput').click()">
       <span class="icon">📂</span>
       <h3>Import Existing Dataset</h3>
@@ -525,7 +682,6 @@ window.addEventListener('DOMContentLoaded', () => {
       <input type="file" id="fileInput" accept=".csv" onchange="handleFileUpload(event)">
     </div>
 
-    <!-- Manual Entry Form -->
     <div class="section-title" style="font-size:1.1rem; margin-top:0.5rem;">Manual Segment Entry</div>
     <div class="form-grid">
       <div class="form-group">
@@ -587,11 +743,11 @@ window.addEventListener('DOMContentLoaded', () => {
       <div class="form-group full">
         <label>Severity Score (1 = Minor · 5 = Critical)</label>
         <div class="sev-picker" id="sevPicker">
-          <button onclick="setSeverity(1)">1</button>
-          <button onclick="setSeverity(2)">2</button>
-          <button onclick="setSeverity(3)">3</button>
-          <button onclick="setSeverity(4)">4</button>
-          <button onclick="setSeverity(5)">5</button>
+          <button type="button" onclick="setSeverity(1)">1</button>
+          <button type="button" onclick="setSeverity(2)">2</button>
+          <button type="button" onclick="setSeverity(3)">3</button>
+          <button type="button" onclick="setSeverity(4)">4</button>
+          <button type="button" onclick="setSeverity(5)">5</button>
         </div>
         <input type="hidden" id="f_severity" value="">
       </div>
@@ -607,14 +763,12 @@ window.addEventListener('DOMContentLoaded', () => {
     <div class="entry-table-wrap" id="entryPreview"></div>
   </div>
 
-  <!-- ===================== TAB: DASHBOARD ===================== -->
   <div id="tab-dashboard" class="tab-panel">
     <div id="dashContent">
       <div class="no-data-msg">No data yet. Enter segments in the Data Entry tab to see the dashboard.</div>
     </div>
   </div>
 
-  <!-- ===================== TAB: INDICATORS ===================== -->
   <div id="tab-indicators" class="tab-panel">
     <div class="section-title">Indicator Analysis <span>Frequency & severity per indicator</span></div>
     <div class="filter-row">
@@ -630,7 +784,6 @@ window.addEventListener('DOMContentLoaded', () => {
     </div>
   </div>
 
-  <!-- ===================== TAB: COMPARISON ===================== -->
   <div id="tab-comparison" class="tab-panel">
     <div class="section-title">Comparative Analysis <span>Stakeholder & regional breakdown</span></div>
     <div id="compContent">
@@ -638,7 +791,6 @@ window.addEventListener('DOMContentLoaded', () => {
     </div>
   </div>
 
-  <!-- ===================== TAB: PRIORITY ===================== -->
   <div id="tab-priority" class="tab-panel">
     <div class="section-title">Priority Policy Signals <span>High severity · High frequency</span></div>
     <div class="filter-row">
@@ -661,7 +813,6 @@ window.addEventListener('DOMContentLoaded', () => {
     </div>
   </div>
 
-  <!-- ===================== TAB: DATASET ===================== -->
   <div id="tab-dataset" class="tab-panel">
     <div class="section-title">Full Dataset <span>All coded segments</span></div>
     <div class="actions-row">
@@ -689,7 +840,6 @@ window.addEventListener('DOMContentLoaded', () => {
 </main>
 
 <script>
-// ── DATA ──────────────────────────────────────────────────────────────────
 let dataset = [];
 let currentSeverity = null;
 
@@ -732,12 +882,14 @@ const DOMAIN_CLASS = { Creation:'creation', Production:'production', Distributio
 const VALID_DOMAINS = ['Creation','Production','Distribution','Access'];
 const LEGACY_DOMAIN_MAP = { Governance: 'Production' };
 
-// ── TABS ───────────────────────────────────────────────────────────────────
 function switchTab(name, btn = null) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
-  if (btn) btn.classList.add('active');
+  if (btn) {
+    btn.classList.add('active');
+    btn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }
   if(name==='dashboard') renderDashboard();
   if(name==='indicators') renderIndicators();
   if(name==='comparison') renderComparison();
@@ -745,7 +897,6 @@ function switchTab(name, btn = null) {
   if(name==='dataset') renderDataset();
 }
 
-// ── FORM ──────────────────────────────────────────────────────────────────
 function updateIndicators() {
   const domain = document.getElementById('f_domain').value;
   const sel = document.getElementById('f_indicator');
@@ -788,9 +939,8 @@ function addSegment() {
     showStatus('Please fill in Segment ID, Snippet, Domain, Indicator, and Severity.', true);
     return;
   }
-  // Auto-increment segment ID if duplicate
-  const finalId = dataset.some(r => r.Segment_ID === segid) ? segid + '_' + Date.now() : segid;
 
+  const finalId = dataset.some(r => r.Segment_ID === segid) ? segid + '_' + Date.now() : segid;
   const indicatorName = INDICATORS[domain].find(([c]) => c===indicator)?.[1] || indicator;
 
   dataset.push({ Segment_ID: finalId, Snippet: snippet, CIPQ_Domain: domain, Indicator_Code: indicator, Indicator_Name: indicatorName, Severity: severity, Stakeholder: stakeholder, Region: region, Session_ID: session });
@@ -800,7 +950,6 @@ function addSegment() {
   updateCounts();
 }
 
-// ── FILE UPLOAD ───────────────────────────────────────────────────────────
 const uploadZone = document.getElementById('uploadZone');
 uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
 uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
@@ -841,7 +990,6 @@ function parseCSV(file) {
   });
 }
 
-// ── EXPORT ────────────────────────────────────────────────────────────────
 function exportCSV() {
   if(!dataset.length) { showStatus('No data to export.', true); return; }
   const csv = Papa.unparse(dataset.map(r => ({
@@ -855,7 +1003,6 @@ function exportCSV() {
   a.click();
 }
 
-// ── AGGREGATION ───────────────────────────────────────────────────────────
 function aggregate() {
   const indMap = {};
   dataset.forEach(r => {
@@ -875,12 +1022,12 @@ function aggregate() {
   Object.values(domMap).forEach(v => v.score = v.scores.reduce((a,b)=>a+b,0)/v.scores.length);
 
   const domScores = VALID_DOMAINS.map(d => domMap[d]?.score || 0);
-  const cipqIndex = domScores.filter(s=>s>0).length ? domScores.filter(s=>s>0).reduce((a,b)=>a+b,0)/domScores.filter(s=>s>0).length : 0;
+  const activeScores = domScores.filter(s => s > 0);
+  const cipqIndex = activeScores.length ? activeScores.reduce((a,b)=>a+b,0)/activeScores.length : 0;
 
   return { indMap, domMap, cipqIndex };
 }
 
-// ── RENDER: ENTRY PREVIEW ─────────────────────────────────────────────────
 function renderEntryPreview() {
   const recent = dataset.slice(-5).reverse();
   if(!recent.length) { document.getElementById('entryPreview').innerHTML = ''; return; }
@@ -893,7 +1040,7 @@ function renderEntryPreview() {
       <td>${r.Indicator_Code} · ${r.Indicator_Name}</td>
       <td>${sevDots(r.Severity)}</td>
       <td>${r.Stakeholder||'—'}</td>
-      <td><button class="btn btn-secondary" style="padding:0.3rem 0.6rem;font-size:0.65rem" onclick="deleteSegment('${r.Segment_ID}')">✕</button></td>
+      <td><button class="btn btn-secondary" style="padding:0.45rem 0.65rem;font-size:0.65rem;min-height:36px" onclick="deleteSegment('${r.Segment_ID}')">✕</button></td>
     </tr>`;
   });
   html += '</tbody></table></div>';
@@ -908,13 +1055,15 @@ function deleteSegment(id) {
 
 function sevDots(n) {
   let h = '<div class="sev-mini">';
-  for(let i=1;i<=5;i++) h+=`<div class="sev-dot${i<=n?' filled':''}"></div>`;
-  return h + `</div>`;
+  for(let i=1;i<=5;i++) h += `<div class="sev-dot${i<=n?' filled':''}"></div>`;
+  return h + '</div>';
 }
 
-// ── RENDER: DASHBOARD ─────────────────────────────────────────────────────
 function renderDashboard() {
-  if(!dataset.length) { document.getElementById('dashContent').innerHTML = '<div class="no-data-msg">No data yet. Enter segments in the Data Entry tab to see the dashboard.</div>'; return; }
+  if(!dataset.length) {
+    document.getElementById('dashContent').innerHTML = '<div class="no-data-msg">No data yet. Enter segments in the Data Entry tab to see the dashboard.</div>';
+    return;
+  }
   const { indMap, domMap, cipqIndex } = aggregate();
 
   let ipClass = cipqIndex >= 4 ? 'Critical' : cipqIndex >= 3 ? 'Moderate' : 'Low';
@@ -929,7 +1078,7 @@ function renderDashboard() {
       <div style="font-family:'Playfair Display',serif;font-size:1.6rem;font-weight:700;color:var(--gold)">${ipClass}</div>
       <div class="desc">Average severity across all four CIPQ domains. Scale 1–5.</div>
     </div>
-    <div style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:#c8bfae">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:#c8bfae">
       <div>${dataset.length} segments coded</div>
       <div style="margin-top:0.3rem">${Object.keys(indMap).length} indicators active</div>
       <div style="margin-top:0.3rem">${[...new Set(dataset.map(r=>r.Stakeholder).filter(Boolean))].length} stakeholder types</div>
@@ -955,7 +1104,6 @@ function renderDashboard() {
 
   html += `</div>`;
 
-  // Top 5 indicators
   const top5 = Object.values(indMap).sort((a,b)=>b.avg-a.avg).slice(0,5);
   html += `<div class="section-title" style="margin-top:1.5rem">Top 5 Indicators by Severity <span>Ranked</span></div><div class="table-wrap"><table><thead><tr><th>#</th><th>Indicator</th><th>Domain</th><th>Count</th><th>Avg Severity</th></tr></thead><tbody>`;
   top5.forEach((v,i) => {
@@ -970,7 +1118,6 @@ function renderDashboard() {
   document.getElementById('dashContent').innerHTML = html;
 }
 
-// ── RENDER: INDICATORS ────────────────────────────────────────────────────
 function renderIndicators() {
   if(!dataset.length) { document.getElementById('indicatorContent').innerHTML = '<div class="no-data-msg">No data yet.</div>'; return; }
   const { indMap } = aggregate();
@@ -988,9 +1135,9 @@ function renderIndicators() {
       <td><span class="tag ${dc}">${v.domain}</span></td>
       <td style="font-family:'IBM Plex Mono',monospace;text-align:center">${v.count}</td>
       <td style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--rust)">${v.avg.toFixed(2)}</td>
-      <td style="min-width:120px">
-        <div style="background:var(--cream);border-radius:2px;height:8px;width:120px">
-          <div style="background:var(--rust);height:8px;border-radius:2px;width:${barPct}%"></div>
+      <td style="min-width:140px">
+        <div style="background:var(--cream);border-radius:999px;height:8px;width:120px;max-width:100%">
+          <div style="background:var(--rust);height:8px;border-radius:999px;width:${barPct}%"></div>
         </div>
       </td>
     </tr>`;
@@ -999,7 +1146,6 @@ function renderIndicators() {
   document.getElementById('indicatorContent').innerHTML = html;
 }
 
-// ── RENDER: COMPARISON ────────────────────────────────────────────────────
 function renderComparison() {
   if(!dataset.length) { document.getElementById('compContent').innerHTML = '<div class="no-data-msg">No data yet.</div>'; return; }
 
@@ -1009,7 +1155,6 @@ function renderComparison() {
 
   function buildCompTable(groupKey, groups, title) {
     if(!groups.length) return '';
-    // For each indicator × group: avg severity
     let html = `<div class="section-title" style="font-size:1.1rem;margin-top:1.5rem">${title}</div><div class="table-wrap"><table class="comp-table"><thead><tr><th>Indicator</th>`;
     groups.forEach(g => html += `<th style="text-align:center;font-size:0.68rem">${g}</th>`);
     html += '</tr></thead><tbody>';
@@ -1034,7 +1179,6 @@ function renderComparison() {
   document.getElementById('compContent').innerHTML = html || '<div class="no-data-msg">Not enough metadata to compare. Add Stakeholder and Region fields.</div>';
 }
 
-// ── RENDER: PRIORITY ─────────────────────────────────────────────────────
 function renderPriority() {
   if(!dataset.length) { document.getElementById('priorityContent').innerHTML = '<div class="no-data-msg">No data yet.</div>'; return; }
   const { indMap } = aggregate();
@@ -1042,7 +1186,10 @@ function renderPriority() {
   const minCnt = parseInt(document.getElementById('minCount').value);
   const priorities = Object.values(indMap).filter(v=>v.avg>=minSev && v.count>=minCnt).sort((a,b)=>b.avg-a.avg);
 
-  if(!priorities.length) { document.getElementById('priorityContent').innerHTML = '<div class="no-data-msg">No indicators meet the current thresholds. Try lowering the filters.</div>'; return; }
+  if(!priorities.length) {
+    document.getElementById('priorityContent').innerHTML = '<div class="no-data-msg">No indicators meet the current thresholds. Try lowering the filters.</div>';
+    return;
+  }
 
   let html = `<div class="table-wrap"><table><thead><tr><th>Priority</th><th>Indicator</th><th>Domain</th><th>Segments</th><th>Avg Severity</th><th>Status</th></tr></thead><tbody>`;
   priorities.forEach((v,i) => {
@@ -1060,12 +1207,10 @@ function renderPriority() {
   document.getElementById('priorityContent').innerHTML = html;
 }
 
-// ── RENDER: DATASET ───────────────────────────────────────────────────────
 function renderDataset() {
   const filterDomain = document.getElementById('dsFilterDomain').value;
   const filterStakeholder = document.getElementById('dsFilterStakeholder').value;
 
-  // populate stakeholder filter
   const stakeholders = [...new Set(dataset.map(r=>r.Stakeholder).filter(Boolean))].sort();
   const dsSel = document.getElementById('dsFilterStakeholder');
   const curVal = dsSel.value;
@@ -1078,7 +1223,10 @@ function renderDataset() {
 
   document.getElementById('datasetCount').textContent = `${rows.length} of ${dataset.length} segments`;
 
-  if(!rows.length) { document.getElementById('datasetContent').innerHTML = '<div class="no-data-msg">No segments match current filters.</div>'; return; }
+  if(!rows.length) {
+    document.getElementById('datasetContent').innerHTML = '<div class="no-data-msg">No segments match current filters.</div>';
+    return;
+  }
 
   let html = `<div class="table-wrap"><table><thead><tr><th>Segment ID</th><th>Snippet</th><th>Domain</th><th>Indicator</th><th>Severity</th><th>Stakeholder</th><th>Region</th><th>Session</th><th></th></tr></thead><tbody>`;
   rows.forEach(r => {
@@ -1093,14 +1241,13 @@ function renderDataset() {
       <td style="font-size:0.8rem">${r.Stakeholder||'—'}</td>
       <td style="font-size:0.8rem">${r.Region||'—'}</td>
       <td style="font-size:0.75rem;color:var(--muted)">${r.Session_ID||'—'}</td>
-      <td><button class="btn btn-secondary" style="padding:0.3rem 0.6rem;font-size:0.65rem" onclick="deleteSegment('${r.Segment_ID}')">✕</button></td>
+      <td><button class="btn btn-secondary" style="padding:0.45rem 0.65rem;font-size:0.65rem;min-height:36px" onclick="deleteSegment('${r.Segment_ID}')">✕</button></td>
     </tr>`;
   });
   html += '</tbody></table></div>';
   document.getElementById('datasetContent').innerHTML = html;
 }
 
-// ── UTILS ─────────────────────────────────────────────────────────────────
 function showStatus(msg, isError) {
   const bar = document.getElementById('statusBar');
   bar.textContent = msg;
@@ -1123,7 +1270,6 @@ function refreshAll() {
   if (document.getElementById('tab-priority').classList.contains('active')) renderPriority();
   if (document.getElementById('tab-dataset').classList.contains('active')) renderDataset();
 }
-
 
 window.addEventListener('DOMContentLoaded', () => {
   updateCounts();
