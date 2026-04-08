@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIPQ Analytical System</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js">
+
+window.addEventListener('DOMContentLoaded', () => {
+  updateCounts();
+  renderEntryPreview();
+});
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
+
+  :root {
+    --ink: #1a1a2e;
+    --paper: #f5f0e8;
+    --cream: #ede8dc;
+    --rust: #c94a2e;
+    --gold: #c8993a;
+    --teal: #2a6b6e;
+    --muted: #7a7065;
+    --border: #c8bfae;
+    --creation: #8b4f9e;
+    --production: #c94a2e;
+    --distribution: #2a6b6e;
+    --access: #3a7a3a;
+    --governance: #c8993a;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'IBM Plex Sans', sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+
+  /* HEADER */
+  header {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 2rem 2.5rem 1.5rem;
+    border-bottom: 4px solid var(--gold);
+    position: relative;
+    overflow: hidden;
+  }
+  header::before {
+    content: 'CIPQ';
+    position: absolute;
+    right: -0.5rem;
+    top: -1rem;
+    font-family: 'Playfair Display', serif;
+    font-size: 9rem;
+    font-weight: 900;
+    color: rgba(255,255,255,0.04);
+    pointer-events: none;
+    line-height: 1;
+  }
+  header h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.9rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+  header p {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--gold);
+    margin-top: 0.4rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  /* TABS */
+  nav {
+    background: var(--cream);
+    border-bottom: 2px solid var(--border);
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+    padding: 0 2rem;
+  }
+  nav button {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    padding: 0.9rem 1.2rem;
+    cursor: pointer;
+    color: var(--muted);
+    white-space: nowrap;
+    transition: all 0.2s;
+  }
+  nav button:hover { color: var(--ink); }
+  nav button.active {
+    color: var(--rust);
+    border-bottom-color: var(--rust);
+    font-weight: 500;
+  }
+
+  /* MAIN */
+  main { padding: 2rem 2.5rem; max-width: 1300px; }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* UPLOAD ZONE */
+  .upload-area {
+    border: 2px dashed var(--border);
+    border-radius: 4px;
+    padding: 3rem 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--cream);
+    margin-bottom: 2rem;
+  }
+  .upload-area:hover, .upload-area.drag-over {
+    border-color: var(--teal);
+    background: #e8f0f0;
+  }
+  .upload-area .icon {
+    font-size: 2.5rem;
+    margin-bottom: 0.8rem;
+    display: block;
+  }
+  .upload-area h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.2rem;
+    margin-bottom: 0.5rem;
+  }
+  .upload-area p {
+    font-size: 0.85rem;
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  #fileInput { display: none; }
+
+  .btn {
+    display: inline-block;
+    padding: 0.6rem 1.4rem;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border: none;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all 0.2s;
+  }
+  .btn-primary { background: var(--ink); color: var(--paper); }
+  .btn-primary:hover { background: var(--rust); }
+  .btn-secondary { background: var(--cream); color: var(--ink); border: 1px solid var(--border); }
+  .btn-secondary:hover { border-color: var(--ink); }
+
+  /* STATUS BAR */
+  #statusBar {
+    display: none;
+    background: var(--teal);
+    color: white;
+    padding: 0.7rem 1.2rem;
+    border-radius: 2px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.8rem;
+    margin-bottom: 1.5rem;
+  }
+  #statusBar.error { background: var(--rust); }
+
+  /* SECTION TITLES */
+  .section-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin-bottom: 1.2rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 0.8rem;
+  }
+  .section-title span {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  /* CIPQ INDEX HERO */
+  .index-hero {
+    background: var(--ink);
+    color: var(--paper);
+    border-radius: 4px;
+    padding: 2rem 2.5rem;
+    margin-bottom: 2rem;
+    display: flex;
+    align-items: center;
+    gap: 3rem;
+    flex-wrap: wrap;
+  }
+  .index-hero .big-number {
+    font-family: 'Playfair Display', serif;
+    font-size: 5rem;
+    font-weight: 900;
+    line-height: 1;
+    color: var(--gold);
+  }
+  .index-hero .label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.3rem;
+  }
+  .index-hero .desc {
+    font-size: 0.9rem;
+    max-width: 300px;
+    color: #c8bfae;
+    line-height: 1.5;
+  }
+
+  /* DOMAIN CARDS */
+  .domain-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+  .domain-card {
+    background: white;
+    border-radius: 4px;
+    padding: 1.2rem 1.5rem;
+    border-top: 4px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+  .domain-card.creation { border-top-color: var(--creation); }
+  .domain-card.production { border-top-color: var(--production); }
+  .domain-card.distribution { border-top-color: var(--distribution); }
+  .domain-card.access { border-top-color: var(--access); }
+  .domain-card.governance { border-top-color: var(--governance); }
+  .domain-card .d-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin-bottom: 0.3rem;
+  }
+  .domain-card .d-score {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.4rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .domain-card.creation .d-score { color: var(--creation); }
+  .domain-card.production .d-score { color: var(--production); }
+  .domain-card.distribution .d-score { color: var(--distribution); }
+  .domain-card.access .d-score { color: var(--access); }
+  .domain-card.governance .d-score { color: var(--governance); }
+  .domain-card .d-count {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: 0.4rem;
+  }
+  .domain-bar {
+    margin-top: 0.8rem;
+    height: 4px;
+    background: var(--cream);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .domain-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 1s ease;
+  }
+
+  /* TABLE */
+  .table-wrap { overflow-x: auto; margin-bottom: 2rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  thead tr { background: var(--ink); color: var(--paper); }
+  thead th {
+    padding: 0.7rem 1rem;
+    text-align: left;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 500;
+  }
+  tbody tr { border-bottom: 1px solid var(--border); }
+  tbody tr:hover { background: var(--cream); }
+  tbody td { padding: 0.65rem 1rem; vertical-align: middle; }
+  .tag {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 2px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .tag.creation { background: #f3e8f7; color: var(--creation); }
+  .tag.production { background: #fdeee9; color: var(--production); }
+  .tag.distribution { background: #e6f0f0; color: var(--distribution); }
+  .tag.access { background: #e8f3e8; color: var(--access); }
+  .tag.governance { background: #fdf4e3; color: var(--governance); }
+
+  .priority-badge {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 2px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.65rem;
+    font-weight: 500;
+    background: var(--rust);
+    color: white;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .severity-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .severity-pip {
+    width: 10px; height: 10px; border-radius: 50%;
+    display: inline-block;
+  }
+  .sev-mini {
+    display: flex; gap: 2px;
+  }
+  .sev-dot {
+    width: 8px; height: 8px; border-radius: 1px;
+    background: var(--border);
+  }
+  .sev-dot.filled { background: var(--rust); }
+
+  /* ENTRY FORM */
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .form-group label {
+    display: block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 0.3rem;
+  }
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    width: 100%;
+    padding: 0.55rem 0.8rem;
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 0.85rem;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: white;
+    color: var(--ink);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .form-group input:focus,
+  .form-group select:focus,
+  .form-group textarea:focus {
+    border-color: var(--teal);
+  }
+  .form-group textarea { resize: vertical; min-height: 80px; }
+  .form-group.full { grid-column: 1 / -1; }
+
+  /* SEVERITY PICKER */
+  .sev-picker { display: flex; gap: 0.5rem; }
+  .sev-picker button {
+    width: 36px; height: 36px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: white;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    color: var(--muted);
+  }
+  .sev-picker button:hover { border-color: var(--ink); color: var(--ink); }
+  .sev-picker button.selected { background: var(--rust); border-color: var(--rust); color: white; font-weight: 600; }
+
+  /* PREVIEW TABLE (entry tab) */
+  .entry-table-wrap { margin-top: 2rem; }
+
+  /* EMPTY STATE */
+  .empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--muted);
+  }
+  .empty-state .icon { font-size: 3rem; margin-bottom: 1rem; display: block; }
+  .empty-state p { font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; }
+
+  /* ACTIONS ROW */
+  .actions-row {
+    display: flex;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+    align-items: center;
+  }
+  .actions-row .count-badge {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-left: auto;
+  }
+
+  /* COMPARISON TABLE */
+  .comp-table th:first-child, .comp-table td:first-child {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.78rem;
+    min-width: 180px;
+  }
+  .comp-cell {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.82rem;
+    text-align: center;
+  }
+  .comp-cell.high { color: var(--rust); font-weight: 600; }
+  .comp-cell.mid { color: var(--gold); }
+  .comp-cell.low { color: var(--teal); }
+
+  /* RESPONSIVE */
+  @media (max-width: 640px) {
+    main { padding: 1.5rem 1rem; }
+    header { padding: 1.5rem 1rem; }
+    nav { padding: 0 1rem; }
+    .index-hero { gap: 1.5rem; padding: 1.5rem; }
+    .index-hero .big-number { font-size: 3.5rem; }
+  }
+
+  .no-data-msg {
+    background: var(--cream);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2rem;
+    text-align: center;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+
+  .filter-row {
+    display: flex;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+    align-items: center;
+  }
+  .filter-row select, .filter-row input {
+    padding: 0.45rem 0.7rem;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: white;
+    color: var(--ink);
+    outline: none;
+  }
+  .filter-row label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Creative Industry Policy Quadrant<br>Analytical System</h1>
+  <p>Philippine Book Publishing Industry Analysis · v2.0</p>
+</header>
+
+<nav id="mainNav">
+  <button class="active" onclick="switchTab('entry', this)">01 · Data Entry</button>
+  <button onclick="switchTab('dashboard', this)">02 · Dashboard</button>
+  <button onclick="switchTab('indicators', this)">03 · Indicators</button>
+  <button onclick="switchTab('comparison', this)">04 · Comparisons</button>
+  <button onclick="switchTab('priority', this)">05 · Priority Signals</button>
+  <button onclick="switchTab('dataset', this)">06 · Dataset</button>
+</nav>
+
+<main>
+
+  <!-- STATUS BAR -->
+  <div id="statusBar"></div>
+
+  <!-- ===================== TAB: ENTRY ===================== -->
+  <div id="tab-entry" class="tab-panel active">
+    <div class="section-title">Data Entry <span>Encode narrative segments</span></div>
+
+    <!-- Upload CSV -->
+    <div class="upload-area" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+      <span class="icon">📂</span>
+      <h3>Import Existing Dataset</h3>
+      <p>Drop a CSV file here or click to browse · Must match CIPQ dataset structure</p>
+      <input type="file" id="fileInput" accept=".csv" onchange="handleFileUpload(event)">
+    </div>
+
+    <!-- Manual Entry Form -->
+    <div class="section-title" style="font-size:1.1rem; margin-top:0.5rem;">Manual Segment Entry</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Segment ID</label>
+        <input type="text" id="f_segid" placeholder="e.g. FGD1_001">
+      </div>
+      <div class="form-group">
+        <label>CIPQ Domain</label>
+        <select id="f_domain" onchange="updateIndicators()">
+          <option value="">— Select Domain —</option>
+          <option value="Creation">Creation</option>
+          <option value="Production">Production</option>
+          <option value="Distribution">Distribution</option>
+          <option value="Access">Access</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Indicator Code</label>
+        <select id="f_indicator">
+          <option value="">— Select Domain First —</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Stakeholder Group</label>
+        <select id="f_stakeholder">
+          <option value="">— Select —</option>
+          <option>Publisher</option>
+          <option>Author</option>
+          <option>Illustrator</option>
+          <option>Editor</option>
+          <option>Distributor</option>
+          <option>Bookseller</option>
+          <option>Librarian</option>
+          <option>Reader</option>
+          <option>Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Region</label>
+        <select id="f_region">
+          <option value="">— Select —</option>
+          <option>NCR</option><option>CAR</option><option>Region I</option>
+          <option>Region II</option><option>Region III</option><option>Region IV-A</option>
+          <option>Region IV-B</option><option>Region V</option><option>Region VI</option>
+          <option>Region VII</option><option>Region VIII</option><option>Region IX</option>
+          <option>Region X</option><option>Region XI</option><option>Region XII</option>
+          <option>Region XIII</option><option>BARMM</option><option>Visayas</option>
+          <option>Mindanao</option><option>Luzon</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Session ID</label>
+        <input type="text" id="f_session" placeholder="e.g. KII_NCR_01">
+      </div>
+      <div class="form-group full">
+        <label>Narrative Snippet</label>
+        <textarea id="f_snippet" placeholder="Paste the stakeholder statement here…"></textarea>
+      </div>
+      <div class="form-group full">
+        <label>Severity Score (1 = Minor · 5 = Critical)</label>
+        <div class="sev-picker" id="sevPicker">
+          <button onclick="setSeverity(1)">1</button>
+          <button onclick="setSeverity(2)">2</button>
+          <button onclick="setSeverity(3)">3</button>
+          <button onclick="setSeverity(4)">4</button>
+          <button onclick="setSeverity(5)">5</button>
+        </div>
+        <input type="hidden" id="f_severity" value="">
+      </div>
+    </div>
+
+    <div class="actions-row">
+      <button class="btn btn-primary" onclick="addSegment()">+ Add Segment</button>
+      <button class="btn btn-secondary" onclick="clearForm()">Clear Form</button>
+      <button class="btn btn-secondary" onclick="exportCSV()">⬇ Export CSV</button>
+      <span class="count-badge" id="segCount">0 segments loaded</span>
+    </div>
+
+    <div class="entry-table-wrap" id="entryPreview"></div>
+  </div>
+
+  <!-- ===================== TAB: DASHBOARD ===================== -->
+  <div id="tab-dashboard" class="tab-panel">
+    <div id="dashContent">
+      <div class="no-data-msg">No data yet. Enter segments in the Data Entry tab to see the dashboard.</div>
+    </div>
+  </div>
+
+  <!-- ===================== TAB: INDICATORS ===================== -->
+  <div id="tab-indicators" class="tab-panel">
+    <div class="section-title">Indicator Analysis <span>Frequency & severity per indicator</span></div>
+    <div class="filter-row">
+      <label>Domain:</label>
+      <select id="indFilterDomain" onchange="renderIndicators()">
+        <option value="">All Domains</option>
+        <option>Creation</option><option>Production</option>
+        <option>Distribution</option><option>Access</option>
+      </select>
+    </div>
+    <div id="indicatorContent">
+      <div class="no-data-msg">No data yet. Enter segments in the Data Entry tab.</div>
+    </div>
+  </div>
+
+  <!-- ===================== TAB: COMPARISON ===================== -->
+  <div id="tab-comparison" class="tab-panel">
+    <div class="section-title">Comparative Analysis <span>Stakeholder & regional breakdown</span></div>
+    <div id="compContent">
+      <div class="no-data-msg">No data yet. Enter segments in the Data Entry tab.</div>
+    </div>
+  </div>
+
+  <!-- ===================== TAB: PRIORITY ===================== -->
+  <div id="tab-priority" class="tab-panel">
+    <div class="section-title">Priority Policy Signals <span>High severity · High frequency</span></div>
+    <div class="filter-row">
+      <label>Min Severity:</label>
+      <select id="minSev" onchange="renderPriority()">
+        <option value="3.5">≥ 3.5</option>
+        <option value="4.0" selected>≥ 4.0</option>
+        <option value="4.5">≥ 4.5</option>
+      </select>
+      <label>Min Count:</label>
+      <select id="minCount" onchange="renderPriority()">
+        <option value="1">≥ 1</option>
+        <option value="2">≥ 2</option>
+        <option value="3" selected>≥ 3</option>
+        <option value="5">≥ 5</option>
+      </select>
+    </div>
+    <div id="priorityContent">
+      <div class="no-data-msg">No data yet. Enter segments in the Data Entry tab.</div>
+    </div>
+  </div>
+
+  <!-- ===================== TAB: DATASET ===================== -->
+  <div id="tab-dataset" class="tab-panel">
+    <div class="section-title">Full Dataset <span>All coded segments</span></div>
+    <div class="actions-row">
+      <button class="btn btn-secondary" onclick="exportCSV()">⬇ Export CSV</button>
+      <button class="btn btn-secondary" onclick="if(confirm('Delete ALL segments?')) { dataset=[]; refreshAll(); }">🗑 Clear All</button>
+      <span class="count-badge" id="datasetCount">0 segments</span>
+    </div>
+    <div class="filter-row">
+      <label>Filter Domain:</label>
+      <select id="dsFilterDomain" onchange="renderDataset()">
+        <option value="">All</option>
+        <option>Creation</option><option>Production</option>
+        <option>Distribution</option><option>Access</option>
+      </select>
+      <label>Stakeholder:</label>
+      <select id="dsFilterStakeholder" onchange="renderDataset()">
+        <option value="">All</option>
+      </select>
+    </div>
+    <div id="datasetContent">
+      <div class="no-data-msg">No data yet.</div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ── DATA ──────────────────────────────────────────────────────────────────
+let dataset = [];
+let currentSeverity = null;
+
+const INDICATORS = {
+  Creation: [
+    ['C1','Contract Fairness'],
+    ['C2','Royalty Transparency'],
+    ['C3','Copyright Protection'],
+    ['C4','Curriculum Volatility'],
+    ['C5','Creator Income Stability']
+  ],
+  Production: [
+    ['P1','Editorial Workflow Compression'],
+    ['P2','Printing Cost Volatility'],
+    ['P3','Import Dependence'],
+    ['P4','Small Print Run Constraint'],
+    ['P5','Production Quality Risk'],
+    ['G1','Procurement Policy Volatility'],
+    ['G2','Payment Delay Risk'],
+    ['G3','Evaluation Transparency'],
+    ['G4','Institutional Coordination Gap']
+  ],
+  Distribution: [
+    ['D1','Logistics Cost Burden'],
+    ['D2','Infrastructure Deficit'],
+    ['D3','Publisher Distribution Overload'],
+    ['D4','Regional Access Inequality'],
+    ['D5','Disaster Logistics Risk']
+  ],
+  Access: [
+    ['A1','Library Infrastructure Weakness'],
+    ['A2','School Library Accessibility'],
+    ['A3','Reading Culture Support'],
+    ['A4','Digital Infrastructure Gap'],
+    ['A5','Digital Market Readiness']
+  ]
+};
+
+const DOMAIN_CLASS = { Creation:'creation', Production:'production', Distribution:'distribution', Access:'access' };
+const VALID_DOMAINS = ['Creation','Production','Distribution','Access'];
+const LEGACY_DOMAIN_MAP = { Governance: 'Production' };
+
+// ── TABS ───────────────────────────────────────────────────────────────────
+function switchTab(name, btn = null) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  if (btn) btn.classList.add('active');
+  if(name==='dashboard') renderDashboard();
+  if(name==='indicators') renderIndicators();
+  if(name==='comparison') renderComparison();
+  if(name==='priority') renderPriority();
+  if(name==='dataset') renderDataset();
+}
+
+// ── FORM ──────────────────────────────────────────────────────────────────
+function updateIndicators() {
+  const domain = document.getElementById('f_domain').value;
+  const sel = document.getElementById('f_indicator');
+  sel.innerHTML = '<option value="">— Select Indicator —</option>';
+  if(INDICATORS[domain]) {
+    INDICATORS[domain].forEach(([code, name]) => {
+      sel.innerHTML += `<option value="${code}">${code} · ${name}</option>`;
+    });
+  }
+}
+
+function setSeverity(n) {
+  currentSeverity = n;
+  document.getElementById('f_severity').value = n;
+  document.querySelectorAll('.sev-picker button').forEach((b,i) => {
+    b.classList.toggle('selected', i+1 <= n);
+  });
+}
+
+function clearForm() {
+  ['f_segid','f_snippet','f_session'].forEach(id => document.getElementById(id).value = '');
+  ['f_domain','f_indicator','f_stakeholder','f_region'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('f_indicator').innerHTML = '<option value="">— Select Domain First —</option>';
+  currentSeverity = null;
+  document.getElementById('f_severity').value = '';
+  document.querySelectorAll('.sev-picker button').forEach(b => b.classList.remove('selected'));
+}
+
+function addSegment() {
+  const segid = document.getElementById('f_segid').value.trim();
+  const snippet = document.getElementById('f_snippet').value.trim();
+  const domain = document.getElementById('f_domain').value;
+  const indicator = document.getElementById('f_indicator').value;
+  const severity = parseInt(document.getElementById('f_severity').value);
+  const stakeholder = document.getElementById('f_stakeholder').value;
+  const region = document.getElementById('f_region').value;
+  const session = document.getElementById('f_session').value.trim();
+
+  if(!segid || !snippet || !domain || !indicator || !severity) {
+    showStatus('Please fill in Segment ID, Snippet, Domain, Indicator, and Severity.', true);
+    return;
+  }
+  // Auto-increment segment ID if duplicate
+  const finalId = dataset.some(r => r.Segment_ID === segid) ? segid + '_' + Date.now() : segid;
+
+  const indicatorName = INDICATORS[domain].find(([c]) => c===indicator)?.[1] || indicator;
+
+  dataset.push({ Segment_ID: finalId, Snippet: snippet, CIPQ_Domain: domain, Indicator_Code: indicator, Indicator_Name: indicatorName, Severity: severity, Stakeholder: stakeholder, Region: region, Session_ID: session });
+  showStatus(`Segment ${finalId} added. Total: ${dataset.length}`, false);
+  clearForm();
+  renderEntryPreview();
+  updateCounts();
+}
+
+// ── FILE UPLOAD ───────────────────────────────────────────────────────────
+const uploadZone = document.getElementById('uploadZone');
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('drag-over'); if(e.dataTransfer.files[0]) parseCSV(e.dataTransfer.files[0]); });
+
+function handleFileUpload(e) { if(e.target.files[0]) parseCSV(e.target.files[0]); }
+
+function parseCSV(file) {
+  Papa.parse(file, {
+    header: true, skipEmptyLines: true,
+    complete: (results) => {
+      const rows = results.data;
+      let added = 0;
+      rows.forEach(r => {
+        const rawDomain = r.CIPQ_Domain || r.Domain || '';
+        const domain = LEGACY_DOMAIN_MAP[rawDomain] || rawDomain;
+        const code = r.Indicator_Code || r.Indicator || '';
+        const sev = parseInt(r.Severity);
+        if(!VALID_DOMAINS.includes(domain) || !code || isNaN(sev)) return;
+        const indicatorName = r.Indicator_Name || (INDICATORS[domain]?.find(([c])=>c===code)?.[1] || code);
+        dataset.push({
+          Segment_ID: r.Segment_ID || ('IMP_' + Date.now() + '_' + added),
+          Snippet: r.Snippet || '',
+          CIPQ_Domain: domain,
+          Indicator_Code: code,
+          Indicator_Name: indicatorName,
+          Severity: sev,
+          Stakeholder: r.Stakeholder || '',
+          Region: r.Region || '',
+          Session_ID: r.Session_ID || ''
+        });
+        added++;
+      });
+      showStatus(`Imported ${added} segments from CSV. Total: ${dataset.length}`, false);
+      refreshAll();
+    },
+    error: () => showStatus('Error parsing CSV file.', true)
+  });
+}
+
+// ── EXPORT ────────────────────────────────────────────────────────────────
+function exportCSV() {
+  if(!dataset.length) { showStatus('No data to export.', true); return; }
+  const csv = Papa.unparse(dataset.map(r => ({
+    Segment_ID: r.Segment_ID, Snippet: r.Snippet, CIPQ_Domain: r.CIPQ_Domain,
+    Indicator_Code: r.Indicator_Code, Indicator_Name: r.Indicator_Name,
+    Severity: r.Severity, Stakeholder: r.Stakeholder, Region: r.Region, Session_ID: r.Session_ID
+  })));
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = 'CIPQ_Dataset_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+}
+
+// ── AGGREGATION ───────────────────────────────────────────────────────────
+function aggregate() {
+  const indMap = {};
+  dataset.forEach(r => {
+    const key = r.Indicator_Code;
+    if(!indMap[key]) indMap[key] = { code: key, name: r.Indicator_Name, domain: r.CIPQ_Domain, count: 0, total: 0 };
+    indMap[key].count++;
+    indMap[key].total += r.Severity;
+  });
+  Object.values(indMap).forEach(v => v.avg = v.total / v.count);
+
+  const domMap = {};
+  Object.values(indMap).forEach(v => {
+    if(!domMap[v.domain]) domMap[v.domain] = { scores: [], count: 0 };
+    domMap[v.domain].scores.push(v.avg);
+    domMap[v.domain].count += v.count;
+  });
+  Object.values(domMap).forEach(v => v.score = v.scores.reduce((a,b)=>a+b,0)/v.scores.length);
+
+  const domScores = VALID_DOMAINS.map(d => domMap[d]?.score || 0);
+  const cipqIndex = domScores.filter(s=>s>0).length ? domScores.filter(s=>s>0).reduce((a,b)=>a+b,0)/domScores.filter(s=>s>0).length : 0;
+
+  return { indMap, domMap, cipqIndex };
+}
+
+// ── RENDER: ENTRY PREVIEW ─────────────────────────────────────────────────
+function renderEntryPreview() {
+  const recent = dataset.slice(-5).reverse();
+  if(!recent.length) { document.getElementById('entryPreview').innerHTML = ''; return; }
+  let html = `<div class="section-title" style="font-size:1rem;margin-top:0.5rem;">Recent Entries <span>Last ${recent.length}</span></div><div class="table-wrap"><table><thead><tr><th>Segment ID</th><th>Domain</th><th>Indicator</th><th>Severity</th><th>Stakeholder</th><th>Action</th></tr></thead><tbody>`;
+  recent.forEach(r => {
+    const dc = DOMAIN_CLASS[r.CIPQ_Domain]||'';
+    html += `<tr>
+      <td><code style="font-size:0.75rem">${r.Segment_ID}</code></td>
+      <td><span class="tag ${dc}">${r.CIPQ_Domain}</span></td>
+      <td>${r.Indicator_Code} · ${r.Indicator_Name}</td>
+      <td>${sevDots(r.Severity)}</td>
+      <td>${r.Stakeholder||'—'}</td>
+      <td><button class="btn btn-secondary" style="padding:0.3rem 0.6rem;font-size:0.65rem" onclick="deleteSegment('${r.Segment_ID}')">✕</button></td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  document.getElementById('entryPreview').innerHTML = html;
+}
+
+function deleteSegment(id) {
+  dataset = dataset.filter(r => r.Segment_ID !== id);
+  refreshAll();
+  showStatus('Segment removed.', false);
+}
+
+function sevDots(n) {
+  let h = '<div class="sev-mini">';
+  for(let i=1;i<=5;i++) h+=`<div class="sev-dot${i<=n?' filled':''}"></div>`;
+  return h + `</div>`;
+}
+
+// ── RENDER: DASHBOARD ─────────────────────────────────────────────────────
+function renderDashboard() {
+  if(!dataset.length) { document.getElementById('dashContent').innerHTML = '<div class="no-data-msg">No data yet. Enter segments in the Data Entry tab to see the dashboard.</div>'; return; }
+  const { indMap, domMap, cipqIndex } = aggregate();
+
+  let ipClass = cipqIndex >= 4 ? 'Critical' : cipqIndex >= 3 ? 'Moderate' : 'Low';
+  let html = `
+  <div class="index-hero">
+    <div>
+      <div class="label">CIPQ Index</div>
+      <div class="big-number">${cipqIndex.toFixed(2)}</div>
+    </div>
+    <div>
+      <div class="label">Structural Pressure Level</div>
+      <div style="font-family:'Playfair Display',serif;font-size:1.6rem;font-weight:700;color:var(--gold)">${ipClass}</div>
+      <div class="desc">Average severity across all four CIPQ domains. Scale 1–5.</div>
+    </div>
+    <div style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:#c8bfae">
+      <div>${dataset.length} segments coded</div>
+      <div style="margin-top:0.3rem">${Object.keys(indMap).length} indicators active</div>
+      <div style="margin-top:0.3rem">${[...new Set(dataset.map(r=>r.Stakeholder).filter(Boolean))].length} stakeholder types</div>
+    </div>
+  </div>
+  <div class="section-title">Domain Scores <span>Average severity per quadrant</span></div>
+  <div class="domain-grid">`;
+
+  VALID_DOMAINS.forEach(d => {
+    const dm = domMap[d];
+    const score = dm ? dm.score.toFixed(2) : '—';
+    const count = dm ? dm.count : 0;
+    const pct = dm ? (dm.score / 5 * 100) : 0;
+    const dc = DOMAIN_CLASS[d];
+    const barColor = `var(--${dc})`;
+    html += `<div class="domain-card ${dc}">
+      <div class="d-label">${d}</div>
+      <div class="d-score">${score}</div>
+      <div class="d-count">${count} segments</div>
+      <div class="domain-bar"><div class="domain-bar-fill" style="width:${pct}%;background:${barColor}"></div></div>
+    </div>`;
+  });
+
+  html += `</div>`;
+
+  // Top 5 indicators
+  const top5 = Object.values(indMap).sort((a,b)=>b.avg-a.avg).slice(0,5);
+  html += `<div class="section-title" style="margin-top:1.5rem">Top 5 Indicators by Severity <span>Ranked</span></div><div class="table-wrap"><table><thead><tr><th>#</th><th>Indicator</th><th>Domain</th><th>Count</th><th>Avg Severity</th></tr></thead><tbody>`;
+  top5.forEach((v,i) => {
+    const dc = DOMAIN_CLASS[v.domain]||'';
+    html += `<tr><td style="font-family:'IBM Plex Mono',monospace;color:var(--muted)">${i+1}</td>
+      <td><strong>${v.code}</strong> · ${v.name}</td>
+      <td><span class="tag ${dc}">${v.domain}</span></td>
+      <td style="font-family:'IBM Plex Mono',monospace">${v.count}</td>
+      <td><strong style="color:var(--rust)">${v.avg.toFixed(2)}</strong></td></tr>`;
+  });
+  html += '</tbody></table></div>';
+  document.getElementById('dashContent').innerHTML = html;
+}
+
+// ── RENDER: INDICATORS ────────────────────────────────────────────────────
+function renderIndicators() {
+  if(!dataset.length) { document.getElementById('indicatorContent').innerHTML = '<div class="no-data-msg">No data yet.</div>'; return; }
+  const { indMap } = aggregate();
+  const filterDomain = document.getElementById('indFilterDomain').value;
+  let items = Object.values(indMap).sort((a,b)=>b.avg-a.avg);
+  if(filterDomain) items = items.filter(v=>v.domain===filterDomain);
+
+  let html = `<div class="table-wrap"><table><thead><tr><th>Code</th><th>Indicator</th><th>Domain</th><th>Segments</th><th>Avg Severity</th><th>Severity Visual</th></tr></thead><tbody>`;
+  items.forEach(v => {
+    const dc = DOMAIN_CLASS[v.domain]||'';
+    const barPct = (v.avg/5*100).toFixed(0);
+    html += `<tr>
+      <td><code style="font-family:'IBM Plex Mono',monospace;font-weight:600">${v.code}</code></td>
+      <td>${v.name}</td>
+      <td><span class="tag ${dc}">${v.domain}</span></td>
+      <td style="font-family:'IBM Plex Mono',monospace;text-align:center">${v.count}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--rust)">${v.avg.toFixed(2)}</td>
+      <td style="min-width:120px">
+        <div style="background:var(--cream);border-radius:2px;height:8px;width:120px">
+          <div style="background:var(--rust);height:8px;border-radius:2px;width:${barPct}%"></div>
+        </div>
+      </td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  document.getElementById('indicatorContent').innerHTML = html;
+}
+
+// ── RENDER: COMPARISON ────────────────────────────────────────────────────
+function renderComparison() {
+  if(!dataset.length) { document.getElementById('compContent').innerHTML = '<div class="no-data-msg">No data yet.</div>'; return; }
+
+  const stakeholders = [...new Set(dataset.map(r=>r.Stakeholder).filter(Boolean))].sort();
+  const regions = [...new Set(dataset.map(r=>r.Region).filter(Boolean))].sort();
+  const indicators = [...new Set(dataset.map(r=>r.Indicator_Code))].sort();
+
+  function buildCompTable(groupKey, groups, title) {
+    if(!groups.length) return '';
+    // For each indicator × group: avg severity
+    let html = `<div class="section-title" style="font-size:1.1rem;margin-top:1.5rem">${title}</div><div class="table-wrap"><table class="comp-table"><thead><tr><th>Indicator</th>`;
+    groups.forEach(g => html += `<th style="text-align:center;font-size:0.68rem">${g}</th>`);
+    html += '</tr></thead><tbody>';
+    indicators.forEach(code => {
+      const indicatorName = dataset.find(r=>r.Indicator_Code===code)?.Indicator_Name || code;
+      html += `<tr><td><code style="font-size:0.75rem">${code}</code> ${indicatorName}</td>`;
+      groups.forEach(g => {
+        const rows = dataset.filter(r=>r.Indicator_Code===code && r[groupKey]===g);
+        if(!rows.length) { html += `<td class="comp-cell" style="color:var(--border)">—</td>`; return; }
+        const avg = rows.reduce((s,r)=>s+r.Severity,0)/rows.length;
+        const cls = avg>=4?'high':avg>=3?'mid':'low';
+        html += `<td class="comp-cell ${cls}">${avg.toFixed(1)}</td>`;
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+    return html;
+  }
+
+  let html = buildCompTable('Stakeholder', stakeholders, 'By Stakeholder Group');
+  html += buildCompTable('Region', regions, 'By Region');
+  document.getElementById('compContent').innerHTML = html || '<div class="no-data-msg">Not enough metadata to compare. Add Stakeholder and Region fields.</div>';
+}
+
+// ── RENDER: PRIORITY ─────────────────────────────────────────────────────
+function renderPriority() {
+  if(!dataset.length) { document.getElementById('priorityContent').innerHTML = '<div class="no-data-msg">No data yet.</div>'; return; }
+  const { indMap } = aggregate();
+  const minSev = parseFloat(document.getElementById('minSev').value);
+  const minCnt = parseInt(document.getElementById('minCount').value);
+  const priorities = Object.values(indMap).filter(v=>v.avg>=minSev && v.count>=minCnt).sort((a,b)=>b.avg-a.avg);
+
+  if(!priorities.length) { document.getElementById('priorityContent').innerHTML = '<div class="no-data-msg">No indicators meet the current thresholds. Try lowering the filters.</div>'; return; }
+
+  let html = `<div class="table-wrap"><table><thead><tr><th>Priority</th><th>Indicator</th><th>Domain</th><th>Segments</th><th>Avg Severity</th><th>Status</th></tr></thead><tbody>`;
+  priorities.forEach((v,i) => {
+    const dc = DOMAIN_CLASS[v.domain]||'';
+    html += `<tr>
+      <td style="font-family:'Playfair Display',serif;font-size:1.3rem;font-weight:700;color:var(--muted)">${i+1}</td>
+      <td><strong>${v.code}</strong> · ${v.name}</td>
+      <td><span class="tag ${dc}">${v.domain}</span></td>
+      <td style="font-family:'IBM Plex Mono',monospace">${v.count}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;font-weight:700;color:var(--rust)">${v.avg.toFixed(2)}</td>
+      <td><span class="priority-badge">Priority</span></td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  document.getElementById('priorityContent').innerHTML = html;
+}
+
+// ── RENDER: DATASET ───────────────────────────────────────────────────────
+function renderDataset() {
+  const filterDomain = document.getElementById('dsFilterDomain').value;
+  const filterStakeholder = document.getElementById('dsFilterStakeholder').value;
+
+  // populate stakeholder filter
+  const stakeholders = [...new Set(dataset.map(r=>r.Stakeholder).filter(Boolean))].sort();
+  const dsSel = document.getElementById('dsFilterStakeholder');
+  const curVal = dsSel.value;
+  dsSel.innerHTML = '<option value="">All</option>';
+  stakeholders.forEach(s => dsSel.innerHTML += `<option${s===curVal?' selected':''}>${s}</option>`);
+
+  let rows = dataset;
+  if(filterDomain) rows = rows.filter(r=>r.CIPQ_Domain===filterDomain);
+  if(filterStakeholder) rows = rows.filter(r=>r.Stakeholder===filterStakeholder);
+
+  document.getElementById('datasetCount').textContent = `${rows.length} of ${dataset.length} segments`;
+
+  if(!rows.length) { document.getElementById('datasetContent').innerHTML = '<div class="no-data-msg">No segments match current filters.</div>'; return; }
+
+  let html = `<div class="table-wrap"><table><thead><tr><th>Segment ID</th><th>Snippet</th><th>Domain</th><th>Indicator</th><th>Severity</th><th>Stakeholder</th><th>Region</th><th>Session</th><th></th></tr></thead><tbody>`;
+  rows.forEach(r => {
+    const dc = DOMAIN_CLASS[r.CIPQ_Domain]||'';
+    const snip = r.Snippet.length>80 ? r.Snippet.slice(0,80)+'…' : r.Snippet;
+    html += `<tr>
+      <td><code style="font-size:0.72rem">${r.Segment_ID}</code></td>
+      <td style="font-size:0.82rem;max-width:240px">${snip}</td>
+      <td><span class="tag ${dc}">${r.CIPQ_Domain}</span></td>
+      <td style="font-size:0.8rem">${r.Indicator_Code} · ${r.Indicator_Name}</td>
+      <td>${sevDots(r.Severity)}</td>
+      <td style="font-size:0.8rem">${r.Stakeholder||'—'}</td>
+      <td style="font-size:0.8rem">${r.Region||'—'}</td>
+      <td style="font-size:0.75rem;color:var(--muted)">${r.Session_ID||'—'}</td>
+      <td><button class="btn btn-secondary" style="padding:0.3rem 0.6rem;font-size:0.65rem" onclick="deleteSegment('${r.Segment_ID}')">✕</button></td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  document.getElementById('datasetContent').innerHTML = html;
+}
+
+// ── UTILS ─────────────────────────────────────────────────────────────────
+function showStatus(msg, isError) {
+  const bar = document.getElementById('statusBar');
+  bar.textContent = msg;
+  bar.className = isError ? 'error' : '';
+  bar.style.display = 'block';
+  setTimeout(() => bar.style.display = 'none', 4000);
+}
+
+function updateCounts() {
+  document.getElementById('segCount').textContent = `${dataset.length} segment${dataset.length!==1?'s':''} loaded`;
+  document.getElementById('datasetCount').textContent = `${dataset.length} segments`;
+}
+
+function refreshAll() {
+  renderEntryPreview();
+  updateCounts();
+  if (document.getElementById('tab-dashboard').classList.contains('active')) renderDashboard();
+  if (document.getElementById('tab-indicators').classList.contains('active')) renderIndicators();
+  if (document.getElementById('tab-comparison').classList.contains('active')) renderComparison();
+  if (document.getElementById('tab-priority').classList.contains('active')) renderPriority();
+  if (document.getElementById('tab-dataset').classList.contains('active')) renderDataset();
+}
+
+
+window.addEventListener('DOMContentLoaded', () => {
+  updateCounts();
+  renderEntryPreview();
+});
+</script>
+</body>
+</html>
