@@ -1356,7 +1356,7 @@ function renderAuthUI() {
     pill.textContent = 'Syncing';
     pill.classList.add('syncing');
     email.textContent = currentUser?.email || 'Preparing workspace';
-    note.textContent = 'Syncing your saved segment history from Supabase.';
+    note.textContent = 'Syncing your saved segment history.';
     return;
   }
 
@@ -1370,7 +1370,7 @@ function renderAuthUI() {
 
   pill.textContent = 'Ready To Sign In';
   email.textContent = 'No active user session';
-  note.textContent = 'Sign in or create an account to save segment history to Supabase. Until then, changes stay only in this browser session.';
+  note.textContent = 'Sign in or create an account to save segment history. Until then, changes stay only in this browser session.';
 }
 
 async function loadSegmentsFromSupabase(options = {}) {
