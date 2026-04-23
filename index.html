@@ -655,6 +655,30 @@
     text-align: left;
   }
   .inline-link-btn:hover { text-decoration: underline; }
+  .snippet-toggle {
+    background: none;
+    border: none;
+    padding: 0;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+    width: 100%;
+    line-height: 1.55;
+  }
+  .snippet-toggle:hover { color: var(--rust); }
+  .snippet-toggle.expanded {
+    white-space: normal;
+  }
+  .snippet-hint {
+    display: block;
+    margin-top: 0.35rem;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
 
   @media (max-width: 1024px) {
     .index-hero {
@@ -792,7 +816,7 @@
 
 <header>
   <h1>Creative Industry Policy Quadrant<br>Analytical System</h1>
-  <p>Philippine Book Publishing Industry Analysis · v2.0</p>
+  <p>Philippine Book Publishing Industry Analysis</p>
 </header>
 
 <nav id="mainNav">
@@ -828,9 +852,13 @@
         <label>Segment ID</label>
         <input type="text" id="f_segid" placeholder="e.g. FGD1_001">
       </div>
-      <div class="form-group full">
-        <label>Theme / Code</label>
-        <input type="text" id="f_theme" placeholder="e.g. high printing cost, low author income, lack of libraries">
+      <div class="form-group">
+        <label>Theme</label>
+        <input type="text" id="f_theme" placeholder="e.g. printing cost pressure">
+      </div>
+      <div class="form-group">
+        <label>Open Code</label>
+        <input type="text" id="f_open_code" placeholder="e.g. imported paper dependency">
       </div>
       <div class="form-group">
         <label>CIPQ Domain</label>
@@ -1008,6 +1036,7 @@
 let dataset = [];
 let currentSeverity = null;
 let activeTraceCode = null;
+const expandedSnippetIds = new Set();
 
 const INDICATORS = {
   Creation: [
@@ -1083,7 +1112,7 @@ function setSeverity(n) {
 }
 
 function clearForm() {
-  ['f_segid','f_snippet','f_session','f_theme'].forEach(id => document.getElementById(id).value = '');
+  ['f_segid','f_snippet','f_session','f_theme','f_open_code'].forEach(id => document.getElementById(id).value = '');
   ['f_domain','f_indicator','f_stakeholder','f_region','f_domain_secondary','f_source_type'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f_indicator').innerHTML = '<option value="">— Select Domain First —</option>';
   currentSeverity = null;
@@ -1094,6 +1123,7 @@ function clearForm() {
 function addSegment() {
   const segid = document.getElementById('f_segid').value.trim();
   const theme = document.getElementById('f_theme').value.trim();
+  const openCode = document.getElementById('f_open_code').value.trim();
   const snippet = document.getElementById('f_snippet').value.trim();
   const domain = document.getElementById('f_domain').value;
   const secondaryDomain = document.getElementById('f_domain_secondary').value;
@@ -1104,8 +1134,8 @@ function addSegment() {
   const sourceType = document.getElementById('f_source_type').value;
   const session = document.getElementById('f_session').value.trim();
 
-  if(!segid || !snippet || !theme || !domain || !indicator || !severity) {
-    showStatus('Please fill in Segment ID, Theme/Code, Snippet, Domain, Indicator, and Severity.', true);
+  if(!segid || !snippet || (!theme && !openCode) || !domain || !indicator || !severity) {
+    showStatus('Please fill in Segment ID, Theme or Open Code, Snippet, Domain, Indicator, and Severity.', true);
     return;
   }
 
@@ -1115,7 +1145,8 @@ function addSegment() {
   dataset.push({
     Segment_ID: finalId,
     Snippet: snippet,
-    Theme_Code: theme,
+    Theme: theme,
+    Open_Code: openCode,
     CIPQ_Domain: domain,
     Secondary_Domain: secondaryDomain,
     Indicator_Code: indicator,
@@ -1152,10 +1183,14 @@ function parseCSV(file) {
         const sev = parseInt(r.Severity);
         if(!VALID_DOMAINS.includes(domain) || !code || isNaN(sev)) return;
         const indicatorName = r.Indicator_Name || (INDICATORS[domain]?.find(([c])=>c===code)?.[1] || code);
+        const legacyThemeCode = r.Theme_Code || '';
+        const theme = r.Theme || (!r.Open_Code && !r.OpenCode && !r.Code ? legacyThemeCode : '');
+        const openCode = r.Open_Code || r.OpenCode || r.Code || '';
         dataset.push({
           Segment_ID: r.Segment_ID || ('IMP_' + Date.now() + '_' + added),
           Snippet: r.Snippet || r.Text || r.Quote || '',
-          Theme_Code: r.Theme_Code || r.Theme || r.Code || '',
+          Theme: theme,
+          Open_Code: openCode,
           CIPQ_Domain: domain,
           Secondary_Domain: LEGACY_DOMAIN_MAP[r.Secondary_Domain] || r.Secondary_Domain || '',
           Indicator_Code: code,
@@ -1181,7 +1216,8 @@ function exportCSV() {
   const csv = Papa.unparse(dataset.map(r => ({
     Segment_ID: r.Segment_ID,
     Snippet: r.Snippet,
-    Theme_Code: r.Theme_Code || '',
+    Theme: r.Theme || '',
+    Open_Code: r.Open_Code || '',
     CIPQ_Domain: r.CIPQ_Domain,
     Secondary_Domain: r.Secondary_Domain || '',
     Indicator_Code: r.Indicator_Code,
@@ -1288,7 +1324,8 @@ function renderTraceability(targetId) {
         <code style="font-size:0.72rem">${r.Segment_ID}</code>
         ${sevDots(r.Severity)}
       </div>
-      ${r.Theme_Code ? `<p><strong>Theme/Code:</strong> ${r.Theme_Code}</p>` : ''}
+      ${r.Theme ? `<p><strong>Theme:</strong> ${r.Theme}</p>` : ''}
+      ${r.Open_Code ? `<p><strong>Open Code:</strong> ${r.Open_Code}</p>` : ''}
       <div class="trace-quote">${r.Snippet || '—'}</div>
       <div class="trace-meta">
         <span class="tag ${DOMAIN_CLASS[r.CIPQ_Domain] || ''}">${r.CIPQ_Domain}</span>
@@ -1307,12 +1344,13 @@ function renderTraceability(targetId) {
 function renderEntryPreview() {
   const recent = dataset.slice(-5).reverse();
   if(!recent.length) { document.getElementById('entryPreview').innerHTML = ''; return; }
-  let html = `<div class="section-title" style="font-size:1rem;margin-top:0.5rem;">Recent Entries <span>Last ${recent.length}</span></div><div class="table-wrap"><table><thead><tr><th>Segment ID</th><th>Theme</th><th>Domain</th><th>Indicator</th><th>Severity</th><th>Stakeholder</th><th>Action</th></tr></thead><tbody>`;
+  let html = `<div class="section-title" style="font-size:1rem;margin-top:0.5rem;">Recent Entries <span>Last ${recent.length}</span></div><div class="table-wrap"><table><thead><tr><th>Segment ID</th><th>Theme</th><th>Open Code</th><th>Domain</th><th>Indicator</th><th>Severity</th><th>Stakeholder</th><th>Action</th></tr></thead><tbody>`;
   recent.forEach(r => {
     const dc = DOMAIN_CLASS[r.CIPQ_Domain]||'';
     html += `<tr>
       <td><code style="font-size:0.75rem">${r.Segment_ID}</code></td>
-      <td>${r.Theme_Code || '—'}</td>
+      <td>${r.Theme || '—'}</td>
+      <td>${r.Open_Code || '—'}</td>
       <td><span class="tag ${dc}">${r.CIPQ_Domain}</span></td>
       <td>${r.Indicator_Code} · ${r.Indicator_Name}</td>
       <td>${sevDots(r.Severity)}</td>
@@ -1326,6 +1364,7 @@ function renderEntryPreview() {
 
 function deleteSegment(id) {
   dataset = dataset.filter(r => r.Segment_ID !== id);
+  expandedSnippetIds.delete(id);
   refreshAll();
   showStatus('Segment removed.', false);
 }
@@ -1334,6 +1373,12 @@ function sevDots(n) {
   let h = '<div class="sev-mini">';
   for(let i=1;i<=5;i++) h += `<div class="sev-dot${i<=n?' filled':''}"></div>`;
   return h + '</div>';
+}
+
+function toggleDatasetSnippet(id) {
+  if (expandedSnippetIds.has(id)) expandedSnippetIds.delete(id);
+  else expandedSnippetIds.add(id);
+  renderDataset();
 }
 
 function renderDashboard() {
@@ -1515,14 +1560,22 @@ function renderDataset() {
     return;
   }
 
-  let html = `<div class="table-wrap"><table><thead><tr><th>Segment ID</th><th>Theme</th><th>Snippet</th><th>Domain</th><th>Indicator</th><th>Severity</th><th>Stakeholder</th><th>Region</th><th>Source</th><th>Session</th><th></th></tr></thead><tbody>`;
+  let html = `<div class="table-wrap"><table><thead><tr><th>Segment ID</th><th>Theme</th><th>Open Code</th><th>Snippet</th><th>Domain</th><th>Indicator</th><th>Severity</th><th>Stakeholder</th><th>Region</th><th>Source</th><th>Session</th><th></th></tr></thead><tbody>`;
   rows.forEach(r => {
     const dc = DOMAIN_CLASS[r.CIPQ_Domain]||'';
-    const snip = r.Snippet.length>80 ? r.Snippet.slice(0,80)+'…' : r.Snippet;
+    const isExpanded = expandedSnippetIds.has(r.Segment_ID);
+    const isLongSnippet = r.Snippet.length > 80;
+    const snip = isExpanded || !isLongSnippet ? r.Snippet : r.Snippet.slice(0,80)+'...';
     html += `<tr>
       <td><code style="font-size:0.72rem">${r.Segment_ID}</code></td>
-      <td style="font-size:0.8rem">${r.Theme_Code || '—'}</td>
-      <td style="font-size:0.82rem;max-width:240px">${snip}</td>
+      <td style="font-size:0.8rem">${r.Theme || '—'}</td>
+      <td style="font-size:0.8rem">${r.Open_Code || '—'}</td>
+      <td style="font-size:0.82rem;max-width:${isExpanded ? '420px' : '240px'}">
+        <button class="snippet-toggle${isExpanded ? ' expanded' : ''}" type="button" onclick="toggleDatasetSnippet('${r.Segment_ID}')">
+          ${snip || '-'}
+          ${isLongSnippet ? `<span class="snippet-hint">${isExpanded ? 'Click to collapse' : 'Click to expand'}</span>` : ''}
+        </button>
+      </td>
       <td><span class="tag ${dc}">${r.CIPQ_Domain}</span></td>
       <td style="font-size:0.8rem"><button class="inline-link-btn" type="button" onclick="openIndicatorTrace('${r.Indicator_Code}','indicators')">${r.Indicator_Code} · ${r.Indicator_Name}</button></td>
       <td>${sevDots(r.Severity)}</td>
