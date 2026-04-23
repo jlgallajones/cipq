@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>CIPQ Analytical System</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
 
@@ -198,6 +199,108 @@
     word-break: break-word;
   }
   #statusBar.error { background: var(--rust); }
+
+  .auth-shell {
+    background: linear-gradient(135deg, rgba(201, 153, 58, 0.12), rgba(42, 107, 110, 0.08));
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(320px, 1fr);
+    gap: 1rem;
+    align-items: start;
+  }
+  .auth-summary,
+  .auth-form-card {
+    background: rgba(255,255,255,0.88);
+    border: 1px solid rgba(200, 191, 174, 0.9);
+    border-radius: 12px;
+    padding: 1rem;
+    box-shadow: var(--shadow);
+  }
+  .auth-kicker {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 0.45rem;
+  }
+  .auth-summary h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(1.15rem, 3vw, 1.45rem);
+    line-height: 1.2;
+    margin-bottom: 0.45rem;
+  }
+  .auth-summary p {
+    color: var(--muted);
+    font-size: 0.92rem;
+    max-width: 60ch;
+  }
+  .auth-meta {
+    display: flex;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-top: 0.95rem;
+  }
+  .auth-state-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.3rem 0.75rem;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    background: var(--cream);
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .auth-state-pill.connected {
+    background: #e8f3e8;
+    color: var(--access);
+    border-color: rgba(58,122,58,0.18);
+  }
+  .auth-state-pill.syncing {
+    background: #e6f0f0;
+    color: var(--distribution);
+    border-color: rgba(42,107,110,0.18);
+  }
+  .auth-user-email {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.76rem;
+    color: var(--ink);
+    word-break: break-word;
+  }
+  .auth-note,
+  .auth-footnote {
+    margin-top: 0.8rem;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  .auth-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.8rem;
+  }
+  .auth-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 0.9rem;
+  }
+  .auth-actions .btn {
+    flex: 1 1 150px;
+  }
+  .auth-form-card input[disabled],
+  .auth-form-card button[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
 
   .section-title {
     font-family: 'Playfair Display', serif;
@@ -691,6 +794,14 @@
   }
 
   @media (max-width: 900px) {
+    .auth-shell {
+      grid-template-columns: 1fr;
+    }
+
+    .auth-form-grid {
+      grid-template-columns: 1fr;
+    }
+
     .pipeline-strip {
       grid-template-columns: 1fr 1fr;
     }
@@ -831,6 +942,35 @@
 <main>
 
   <div id="statusBar"></div>
+
+  <section class="auth-shell">
+    <div class="auth-summary">
+      <div class="auth-kicker">Persistent Workspace</div>
+      <h2>Sign in to save and reload your segment history</h2>
+      <div class="auth-meta">
+        <span class="auth-state-pill" id="authStatePill">Local Only</span>
+        <span class="auth-user-email" id="authUserEmail">Not signed in</span>
+      </div>
+      <div class="auth-note" id="authSyncNote">Note: This is an optional feature. You can still use all functionalities without signing in, but your data will not be saved after refreshing or closing the page.</div>
+    </div>
+    <div class="auth-form-card">
+      <div class="auth-form-grid">
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="auth_email" placeholder="name@example.com" autocomplete="email">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="auth_password" placeholder="At least 6 characters" autocomplete="current-password">
+        </div>
+      </div>
+      <div class="auth-actions">
+        <button class="btn btn-primary" id="authLoginBtn" onclick="signInUser()">Log In</button>
+        <button class="btn btn-secondary" id="authSignupBtn" onclick="signUpUser()">Create Account</button>
+        <button class="btn btn-secondary" id="authLogoutBtn" onclick="signOutUser()">Log Out</button>
+      </div>
+    </div>
+  </section>
 
   <div id="tab-entry" class="tab-panel active">
     <div class="section-title">Data Entry <span>Encode narrative segments</span></div>
@@ -1037,6 +1177,20 @@ let dataset = [];
 let currentSeverity = null;
 let activeTraceCode = null;
 const expandedSnippetIds = new Set();
+const SUPABASE_URL = 'https://ueyyrugaynzczkcwnxbt.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVleXlydWdheW56Y3prY3dueGJ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5NDEyOTIsImV4cCI6MjA5MjUxNzI5Mn0.x1XqiUs52OH4TKe070OSOK4c0gSGeYRSZJ30XZSBSuQ';
+const SUPABASE_TABLE = 'segments';
+const supabaseReady = SUPABASE_URL.startsWith('https://') && !SUPABASE_URL.includes('YOUR_PROJECT_ID') && !!SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.includes('YOUR_SUPABASE');
+const supabaseClient = supabaseReady ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  }
+}) : null;
+let currentSession = null;
+let currentUser = null;
+let isCloudSyncing = false;
 
 const INDICATORS = {
   Creation: [
@@ -1076,6 +1230,296 @@ const INDICATORS = {
 const DOMAIN_CLASS = { Creation:'creation', Production:'production', Distribution:'distribution', Access:'access' };
 const VALID_DOMAINS = ['Creation','Production','Distribution','Access'];
 const LEGACY_DOMAIN_MAP = { Governance: 'Production' };
+
+function ensureUniqueSegmentId(baseId, takenIds = null) {
+  const ids = takenIds || new Set(dataset.map(r => r.Segment_ID));
+  const safeBase = (baseId || `SEG_${Date.now()}`).trim();
+  let candidate = safeBase;
+  let suffix = 1;
+  while (ids.has(candidate)) {
+    candidate = `${safeBase}_${suffix}`;
+    suffix += 1;
+  }
+  ids.add(candidate);
+  return candidate;
+}
+
+function normalizeSegmentRecord(record) {
+  return {
+    Segment_ID: record.Segment_ID,
+    Snippet: record.Snippet || '',
+    Theme: record.Theme || '',
+    Open_Code: record.Open_Code || '',
+    CIPQ_Domain: record.CIPQ_Domain,
+    Secondary_Domain: record.Secondary_Domain || '',
+    Indicator_Code: record.Indicator_Code,
+    Indicator_Name: record.Indicator_Name,
+    Severity: parseInt(record.Severity, 10),
+    Stakeholder: record.Stakeholder || '',
+    Region: record.Region || '',
+    Source_Type: record.Source_Type || '',
+    Session_ID: record.Session_ID || '',
+    DB_ID: record.DB_ID || null,
+    Created_At: record.Created_At || null
+  };
+}
+
+function chunkItems(items, size) {
+  const chunks = [];
+  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  return chunks;
+}
+
+function mapSegmentToDbRow(record) {
+  return {
+    user_id: currentUser?.id,
+    segment_id: record.Segment_ID,
+    snippet: record.Snippet,
+    theme: record.Theme || null,
+    open_code: record.Open_Code || null,
+    cipq_domain: record.CIPQ_Domain,
+    secondary_domain: record.Secondary_Domain || null,
+    indicator_code: record.Indicator_Code,
+    indicator_name: record.Indicator_Name,
+    severity: record.Severity,
+    stakeholder: record.Stakeholder || null,
+    region: record.Region || null,
+    source_type: record.Source_Type || null,
+    session_id: record.Session_ID || null
+  };
+}
+
+function mapDbRowToSegment(row) {
+  return normalizeSegmentRecord({
+    Segment_ID: row.segment_id,
+    Snippet: row.snippet,
+    Theme: row.theme,
+    Open_Code: row.open_code,
+    CIPQ_Domain: row.cipq_domain,
+    Secondary_Domain: row.secondary_domain,
+    Indicator_Code: row.indicator_code,
+    Indicator_Name: row.indicator_name,
+    Severity: row.severity,
+    Stakeholder: row.stakeholder,
+    Region: row.region,
+    Source_Type: row.source_type,
+    Session_ID: row.session_id,
+    DB_ID: row.id,
+    Created_At: row.created_at
+  });
+}
+
+function authCredentials() {
+  return {
+    email: document.getElementById('auth_email').value.trim(),
+    password: document.getElementById('auth_password').value
+  };
+}
+
+function clearAuthForm() {
+  document.getElementById('auth_email').value = '';
+  document.getElementById('auth_password').value = '';
+}
+
+function setCloudSyncing(syncing) {
+  isCloudSyncing = syncing;
+  renderAuthUI();
+}
+
+function renderAuthUI() {
+  const pill = document.getElementById('authStatePill');
+  const email = document.getElementById('authUserEmail');
+  const note = document.getElementById('authSyncNote');
+  const loginBtn = document.getElementById('authLoginBtn');
+  const signupBtn = document.getElementById('authSignupBtn');
+  const logoutBtn = document.getElementById('authLogoutBtn');
+  const emailInput = document.getElementById('auth_email');
+  const passwordInput = document.getElementById('auth_password');
+  if (!pill || !email || !note || !loginBtn || !signupBtn || !logoutBtn || !emailInput || !passwordInput) return;
+  const authInputsDisabled = !supabaseReady || isCloudSyncing;
+
+  emailInput.disabled = authInputsDisabled || !!currentUser;
+  passwordInput.disabled = authInputsDisabled || !!currentUser;
+  loginBtn.disabled = authInputsDisabled || !!currentUser;
+  signupBtn.disabled = authInputsDisabled || !!currentUser;
+  logoutBtn.disabled = !supabaseReady || isCloudSyncing || !currentUser;
+
+  pill.className = 'auth-state-pill';
+  if (!supabaseReady) {
+    pill.textContent = 'Local Only';
+    email.textContent = 'Supabase not configured';
+    note.textContent = 'Supabase is not configured yet. Add your project URL and publishable key in the script block before deploying to GitHub Pages.';
+    return;
+  }
+
+  if (isCloudSyncing) {
+    pill.textContent = 'Syncing';
+    pill.classList.add('syncing');
+    email.textContent = currentUser?.email || 'Preparing workspace';
+    note.textContent = 'Syncing your saved segment history from Supabase.';
+    return;
+  }
+
+  if (currentUser) {
+    pill.textContent = 'Cloud Sync On';
+    pill.classList.add('connected');
+    email.textContent = currentUser.email || 'Signed in';
+    note.textContent = `Signed in. Refresh-safe history is active and scoped to this account. ${dataset.length} saved segment${dataset.length !== 1 ? 's' : ''} currently loaded.`;
+    return;
+  }
+
+  pill.textContent = 'Ready To Sign In';
+  email.textContent = 'No active user session';
+  note.textContent = 'Sign in or create an account to save segment history to Supabase. Until then, changes stay only in this browser session.';
+}
+
+async function loadSegmentsFromSupabase(options = {}) {
+  if (!supabaseClient || !currentUser) {
+    dataset = [];
+    expandedSnippetIds.clear();
+    refreshAll();
+    renderAuthUI();
+    return;
+  }
+
+  setCloudSyncing(true);
+  const { data, error } = await supabaseClient
+    .from(SUPABASE_TABLE)
+    .select('*')
+    .order('created_at', { ascending: true })
+    .order('segment_id', { ascending: true });
+
+  if (error) {
+    setCloudSyncing(false);
+    showStatus(`Could not load saved segments: ${error.message}`, true);
+    return;
+  }
+
+  dataset = (data || []).map(mapDbRowToSegment);
+  expandedSnippetIds.clear();
+  refreshAll();
+  setCloudSyncing(false);
+
+  if (!options.silent) {
+    showStatus(`Loaded ${dataset.length} saved segment${dataset.length !== 1 ? 's' : ''} from Supabase.`, false);
+  }
+}
+
+function syncClearAllButton() {
+  const buttons = Array.from(document.querySelectorAll('#tab-dataset .actions-row .btn'));
+  const clearButton = buttons.find(btn => btn.textContent.includes('Clear All'));
+  if (clearButton) clearButton.onclick = () => clearAllSegments();
+}
+
+async function handleSessionChange(session, options = {}) {
+  currentSession = session || null;
+  currentUser = session?.user || null;
+
+  if (!currentUser) {
+    dataset = [];
+    expandedSnippetIds.clear();
+    refreshAll();
+    renderAuthUI();
+    return;
+  }
+
+  await loadSegmentsFromSupabase({ silent: !!options.silent });
+}
+
+async function initializeAuth() {
+  renderAuthUI();
+  syncClearAllButton();
+  if (!supabaseClient) return;
+
+  const { data, error } = await supabaseClient.auth.getSession();
+  if (error) {
+    showStatus(`Could not read saved session: ${error.message}`, true);
+    return;
+  }
+
+  await handleSessionChange(data.session, { silent: true });
+  supabaseClient.auth.onAuthStateChange((event, session) => {
+    handleSessionChange(session, { silent: event === 'INITIAL_SESSION' });
+  });
+}
+
+async function signUpUser() {
+  if (!supabaseClient) {
+    showStatus('Supabase is not configured yet.', true);
+    return;
+  }
+
+  const { email, password } = authCredentials();
+  if (!email || !password) {
+    showStatus('Enter both email and password to create an account.', true);
+    return;
+  }
+
+  setCloudSyncing(true);
+  const { data, error } = await supabaseClient.auth.signUp({
+    email,
+    password,
+    options: { emailRedirectTo: window.location.href.split('#')[0] }
+  });
+  setCloudSyncing(false);
+
+  if (error) {
+    showStatus(`Sign-up failed: ${error.message}`, true);
+    return;
+  }
+
+  clearAuthForm();
+  if (data.session) {
+    showStatus('Account created and signed in. Cloud sync is active.', false);
+    await handleSessionChange(data.session, { silent: true });
+  } else {
+    showStatus('Account created. Check your email if confirmation is required, then log in.', false);
+    renderAuthUI();
+  }
+}
+
+async function signInUser() {
+  if (!supabaseClient) {
+    showStatus('Supabase is not configured yet.', true);
+    return;
+  }
+
+  const { email, password } = authCredentials();
+  if (!email || !password) {
+    showStatus('Enter both email and password to log in.', true);
+    return;
+  }
+
+  setCloudSyncing(true);
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  setCloudSyncing(false);
+
+  if (error) {
+    showStatus(`Login failed: ${error.message}`, true);
+    return;
+  }
+
+  clearAuthForm();
+  await handleSessionChange(data.session, { silent: true });
+  showStatus('Logged in. Saved segment history reloaded from Supabase.', false);
+}
+
+async function signOutUser() {
+  if (!supabaseClient || !currentUser) return;
+
+  setCloudSyncing(true);
+  const { error } = await supabaseClient.auth.signOut();
+  setCloudSyncing(false);
+
+  if (error) {
+    showStatus(`Log out failed: ${error.message}`, true);
+    return;
+  }
+
+  clearAuthForm();
+  await handleSessionChange(null, { silent: true });
+  showStatus('Logged out. Cloud-backed history is hidden until you sign in again.', false);
+}
 
 function switchTab(name, btn = null) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
@@ -1120,7 +1564,7 @@ function clearForm() {
   document.querySelectorAll('.sev-picker button').forEach(b => b.classList.remove('selected'));
 }
 
-function addSegment() {
+async function addSegment() {
   const segid = document.getElementById('f_segid').value.trim();
   const theme = document.getElementById('f_theme').value.trim();
   const openCode = document.getElementById('f_open_code').value.trim();
@@ -1139,10 +1583,9 @@ function addSegment() {
     return;
   }
 
-  const finalId = dataset.some(r => r.Segment_ID === segid) ? segid + '_' + Date.now() : segid;
+  const finalId = ensureUniqueSegmentId(segid);
   const indicatorName = INDICATORS[domain].find(([c]) => c===indicator)?.[1] || indicator;
-
-  dataset.push({
+  const segmentRecord = normalizeSegmentRecord({
     Segment_ID: finalId,
     Snippet: snippet,
     Theme: theme,
@@ -1157,10 +1600,30 @@ function addSegment() {
     Source_Type: sourceType,
     Session_ID: session
   });
-  showStatus(`Segment ${finalId} added. Total: ${dataset.length}`, false);
+
+  if (supabaseClient && currentUser) {
+    setCloudSyncing(true);
+    const { data, error } = await supabaseClient
+      .from(SUPABASE_TABLE)
+      .insert(mapSegmentToDbRow(segmentRecord))
+      .select()
+      .single();
+    setCloudSyncing(false);
+
+    if (error) {
+      showStatus(`Could not save segment to Supabase: ${error.message}`, true);
+      return;
+    }
+
+    dataset.push(mapDbRowToSegment(data));
+    showStatus(`Segment ${finalId} saved to Supabase. Total: ${dataset.length}`, false);
+  } else {
+    dataset.push(segmentRecord);
+    showStatus(`Segment ${finalId} added locally. Sign in to keep it after refresh.`, false);
+  }
+
   clearForm();
-  renderEntryPreview();
-  updateCounts();
+  refreshAll();
 }
 
 const uploadZone = document.getElementById('uploadZone');
@@ -1173,9 +1636,11 @@ function handleFileUpload(e) { if(e.target.files[0]) { updateUploadMeta(e.target
 function parseCSV(file) {
   Papa.parse(file, {
     header: true, skipEmptyLines: true,
-    complete: (results) => {
+    complete: async (results) => {
       const rows = results.data;
       let added = 0;
+      const importedSegments = [];
+      const takenIds = new Set(dataset.map(r => r.Segment_ID));
       rows.forEach(r => {
         const rawDomain = r.CIPQ_Domain || r.Domain || '';
         const domain = LEGACY_DOMAIN_MAP[rawDomain] || rawDomain;
@@ -1186,8 +1651,8 @@ function parseCSV(file) {
         const legacyThemeCode = r.Theme_Code || '';
         const theme = r.Theme || (!r.Open_Code && !r.OpenCode && !r.Code ? legacyThemeCode : '');
         const openCode = r.Open_Code || r.OpenCode || r.Code || '';
-        dataset.push({
-          Segment_ID: r.Segment_ID || ('IMP_' + Date.now() + '_' + added),
+        importedSegments.push(normalizeSegmentRecord({
+          Segment_ID: ensureUniqueSegmentId(r.Segment_ID || ('IMP_' + Date.now() + '_' + added), takenIds),
           Snippet: r.Snippet || r.Text || r.Quote || '',
           Theme: theme,
           Open_Code: openCode,
@@ -1200,11 +1665,38 @@ function parseCSV(file) {
           Region: r.Region || '',
           Source_Type: r.Source_Type || r.Source || '',
           Session_ID: r.Session_ID || ''
-        });
+        }));
         added++;
       });
+
+      if (supabaseClient && currentUser && importedSegments.length) {
+        setCloudSyncing(true);
+        let error = null;
+        for (const batch of chunkItems(importedSegments, 200)) {
+          const result = await supabaseClient
+            .from(SUPABASE_TABLE)
+            .insert(batch.map(mapSegmentToDbRow));
+          if (result.error) {
+            error = result.error;
+            break;
+          }
+        }
+        setCloudSyncing(false);
+
+        if (error) {
+          showStatus(`CSV import reached Supabase but failed to save: ${error.message}`, true);
+          updateUploadMeta(file.name, false);
+          return;
+        }
+
+        await loadSegmentsFromSupabase({ silent: true });
+      } else {
+        dataset.push(...importedSegments);
+      }
+
       updateUploadMeta(file.name, added > 0);
-      showStatus(`Imported ${added} segments from CSV. Total: ${dataset.length}`, false);
+      const syncLabel = supabaseClient && currentUser ? ' and saved to Supabase' : ' locally';
+      showStatus(`Imported ${added} segments from CSV${syncLabel}. Total: ${dataset.length}`, false);
       refreshAll();
     },
     error: () => showStatus('Error parsing CSV file.', true)
@@ -1362,11 +1854,28 @@ function renderEntryPreview() {
   document.getElementById('entryPreview').innerHTML = html;
 }
 
-function deleteSegment(id) {
+async function deleteSegment(id) {
+  const target = dataset.find(r => r.Segment_ID === id);
+  if (!target) return;
+
+  if (supabaseClient && currentUser && target.DB_ID) {
+    setCloudSyncing(true);
+    const { error } = await supabaseClient
+      .from(SUPABASE_TABLE)
+      .delete()
+      .eq('id', target.DB_ID);
+    setCloudSyncing(false);
+
+    if (error) {
+      showStatus(`Could not delete segment from Supabase: ${error.message}`, true);
+      return;
+    }
+  }
+
   dataset = dataset.filter(r => r.Segment_ID !== id);
   expandedSnippetIds.delete(id);
   refreshAll();
-  showStatus('Segment removed.', false);
+  showStatus(supabaseClient && currentUser ? 'Segment removed from Supabase.' : 'Segment removed.', false);
 }
 
 function sevDots(n) {
@@ -1379,6 +1888,29 @@ function toggleDatasetSnippet(id) {
   if (expandedSnippetIds.has(id)) expandedSnippetIds.delete(id);
   else expandedSnippetIds.add(id);
   renderDataset();
+}
+
+async function clearAllSegments() {
+  if (!confirm('Delete ALL segments?')) return;
+
+  if (supabaseClient && currentUser) {
+    setCloudSyncing(true);
+    const { error } = await supabaseClient
+      .from(SUPABASE_TABLE)
+      .delete()
+      .eq('user_id', currentUser.id);
+    setCloudSyncing(false);
+
+    if (error) {
+      showStatus(`Could not clear Supabase history: ${error.message}`, true);
+      return;
+    }
+  }
+
+  dataset = [];
+  expandedSnippetIds.clear();
+  refreshAll();
+  showStatus(supabaseClient && currentUser ? 'All saved segments cleared from Supabase.' : 'All local segments cleared.', false);
 }
 
 function renderDashboard() {
@@ -1601,6 +2133,7 @@ function showStatus(msg, isError) {
 function updateCounts() {
   document.getElementById('segCount').textContent = `${dataset.length} segment${dataset.length!==1?'s':''} loaded`;
   document.getElementById('datasetCount').textContent = `${dataset.length} segments`;
+  renderAuthUI();
 }
 
 function refreshAll() {
@@ -1613,10 +2146,29 @@ function refreshAll() {
   if (document.getElementById('tab-dataset').classList.contains('active')) renderDataset();
 }
 
+Object.assign(window, {
+  switchTab,
+  updateIndicators,
+  setSeverity,
+  clearForm,
+  addSegment,
+  handleFileUpload,
+  exportCSV,
+  openIndicatorTrace,
+  closeIndicatorTrace,
+  deleteSegment,
+  toggleDatasetSnippet,
+  clearAllSegments,
+  signInUser,
+  signUpUser,
+  signOutUser
+});
+
 window.addEventListener('DOMContentLoaded', () => {
   updateCounts();
   renderEntryPreview();
   updateUploadMeta();
+  initializeAuth();
 });
 </script>
 </body>
