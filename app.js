@@ -1687,11 +1687,19 @@ function renderEntryPreview() {
 
   let html = `<div class="section-title" style="font-size:1rem;margin-top:0.5rem;">Recent Entries <span>Last ${recent.length}</span></div>
     <div class="table-wrap">
-      <table>
+      <table class="dataset-table">
+        <colgroup>
+          <col style="width:130px">
+          <col style="width:120px">
+          <col style="width:200px">
+          <col style="width:100px">
+          <col style="width:90px">
+          <col style="width:110px">
+          <col style="width:80px">
+        </colgroup>
         <thead>
           <tr>
             <th>Segment ID</th>
-            <th>Theme</th>
             <th>Quadrant</th>
             <th>Indicator</th>
             <th>Severity</th>
@@ -1703,15 +1711,18 @@ function renderEntryPreview() {
         <tbody>`;
 
   recent.forEach(record => {
+    const sourceLabel = [record.Source_Type, record.Source_ID].filter(Boolean).join(' · ');
     html += `<tr>
-      <td><code style="font-size:0.72rem">${escapeHtml(record.Segment_ID)}</code></td>
-      <td style="font-size:0.8rem">${escapeHtml(record.Theme_Code || '')}<br>${escapeHtml(record.Theme || '-')}</td>
+      <td><code class="ds-segid">${escapeHtml(record.Segment_ID)}</code></td>
       <td><span class="tag ${DOMAIN_CLASS[record.CIPQ_Domain] || ''}">${escapeHtml(record.CIPQ_Domain || '-')}</span></td>
-      <td style="font-size:0.8rem">${escapeHtml(record.Indicator_Code)} | ${escapeHtml(record.Indicator_Name)}</td>
+      <td>
+        <span class="ds-indicator">${escapeHtml(record.Indicator_Name || record.Indicator_Code)}</span>
+        <div class="ds-meta-sub">${escapeHtml(record.Indicator_Code)}</div>
+      </td>
       <td>${sevDots(record.Severity)}</td>
-      <td style="font-size:0.8rem">${escapeHtml(record.Stakeholder || '-')}</td>
-      <td style="font-size:0.8rem">${escapeHtml(record.Source_Type || '-')} ${record.Source_ID ? `| ${escapeHtml(record.Source_ID)}` : ''}</td>
-      <td><button class="btn btn-secondary" style="padding:0.45rem 0.65rem;font-size:0.65rem;min-height:36px" type="button" onclick="deleteSegment('${record.Segment_ID}')">Delete</button></td>
+      <td><span class="ds-cell-text">${escapeHtml(record.Stakeholder || '-')}</span></td>
+      <td><span class="ds-cell-text">${escapeHtml(sourceLabel || '-')}</span></td>
+      <td><button class="btn btn-secondary ds-delete-btn" type="button" onclick="deleteSegment('${record.Segment_ID}')">Delete</button></td>
     </tr>`;
   });
 
@@ -2102,19 +2113,27 @@ function renderDataset() {
   }
 
   let html = `<div class="table-wrap">
-    <table>
+    <table class="dataset-table">
+      <colgroup>
+        <col style="width:120px">
+        <col style="width:240px">
+        <col style="width:200px">
+        <col style="width:100px">
+        <col style="width:100px">
+        <col style="width:110px">
+        <col style="width:90px">
+        <col style="width:80px">
+        <col style="width:80px">
+      </colgroup>
       <thead>
         <tr>
           <th>Segment ID</th>
-          <th>Theme</th>
           <th>Snippet</th>
-          <th>Quadrant</th>
           <th>Indicator</th>
+          <th>Quadrant</th>
           <th>Severity</th>
           <th>Stakeholder</th>
-          <th>Respondent</th>
           <th>Region</th>
-          <th>Source</th>
           <th>Confidence</th>
           <th></th>
         </tr>
@@ -2125,27 +2144,35 @@ function renderDataset() {
     const isExpanded = expandedSnippetIds.has(record.Segment_ID);
     const isLong = record.Snippet.length > 90;
     const snippet = isExpanded || !isLong ? record.Snippet : `${record.Snippet.slice(0, 90)}...`;
+    const sourceLabel = [record.Source_Type, record.Source_ID].filter(Boolean).join(' · ');
+    const respondentLabel = record.Respondent_Type ? `<div class="ds-meta-sub">${escapeHtml(record.Respondent_Type)}</div>` : '';
     html += `<tr>
-      <td><code style="font-size:0.72rem">${escapeHtml(record.Segment_ID)}</code></td>
-      <td style="font-size:0.8rem">${escapeHtml(record.Theme_Code || '')}<br>${escapeHtml(record.Theme || '-')}</td>
-      <td style="font-size:0.82rem;max-width:${isExpanded ? '420px' : '260px'}">
+      <td>
+        <code class="ds-segid">${escapeHtml(record.Segment_ID)}</code>
+        ${sourceLabel ? `<div class="ds-meta-sub">${escapeHtml(sourceLabel)}</div>` : ''}
+      </td>
+      <td>
         <button class="snippet-toggle${isExpanded ? ' expanded' : ''}" type="button" onclick="toggleDatasetSnippet('${record.Segment_ID}')">
           ${escapeHtml(snippet || '-')}
-          ${isLong ? `<span class="snippet-hint">${isExpanded ? 'Click to collapse' : 'Click to expand'}</span>` : ''}
+          ${isLong ? `<span class="snippet-hint">${isExpanded ? 'Collapse' : 'Expand'}</span>` : ''}
         </button>
       </td>
       <td>
-        <span class="tag ${DOMAIN_CLASS[record.CIPQ_Domain] || ''}">${escapeHtml(record.CIPQ_Domain || '-')}</span>
-        ${record.Secondary_Domain ? `<div class="muted-inline" style="margin-top:0.35rem">Secondary: ${escapeHtml(record.Secondary_Domain)}</div>` : ''}
+        <button class="inline-link-btn ds-indicator" type="button" onclick="openIndicatorTrace('${record.Indicator_Code}','indicators')">${escapeHtml(record.Indicator_Name || record.Indicator_Code)}</button>
+        <div class="ds-meta-sub">${escapeHtml(record.Indicator_Code)}</div>
       </td>
-      <td style="font-size:0.8rem"><button class="inline-link-btn" type="button" onclick="openIndicatorTrace('${record.Indicator_Code}','indicators')">${escapeHtml(record.Indicator_Code)} | ${escapeHtml(record.Indicator_Name)}</button></td>
+      <td>
+        <span class="tag ${DOMAIN_CLASS[record.CIPQ_Domain] || ''}">${escapeHtml(record.CIPQ_Domain || '-')}</span>
+        ${record.Secondary_Domain ? `<div class="ds-meta-sub">+ ${escapeHtml(record.Secondary_Domain)}</div>` : ''}
+      </td>
       <td>${sevDots(record.Severity)}</td>
-      <td style="font-size:0.8rem">${escapeHtml(record.Stakeholder || '-')}</td>
-      <td style="font-size:0.8rem">${escapeHtml(record.Respondent_Type || '-')}</td>
-      <td style="font-size:0.8rem">${escapeHtml(record.Region || '-')}</td>
-      <td style="font-size:0.75rem;color:var(--muted)">${escapeHtml(record.Source_Type || '-')} ${record.Source_ID ? `| ${escapeHtml(record.Source_ID)}` : ''}</td>
+      <td>
+        <span class="ds-cell-text">${escapeHtml(record.Stakeholder || '-')}</span>
+        ${respondentLabel}
+      </td>
+      <td><span class="ds-cell-text">${escapeHtml(record.Region || '-')}</span></td>
       <td>${renderConfidencePill(record.Scoring_Confidence || 'medium')}</td>
-      <td><button class="btn btn-secondary" style="padding:0.45rem 0.65rem;font-size:0.65rem;min-height:36px" type="button" onclick="deleteSegment('${record.Segment_ID}')">Delete</button></td>
+      <td><button class="btn btn-secondary ds-delete-btn" type="button" onclick="deleteSegment('${record.Segment_ID}')">Delete</button></td>
     </tr>`;
   });
 
