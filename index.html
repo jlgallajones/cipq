@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -483,7 +483,7 @@
     display: flex;
     gap: 3px;
     align-items: center;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
   }
   .sev-dot {
     width: 8px;
@@ -493,6 +493,13 @@
     flex: 0 0 auto;
   }
   .sev-dot.filled { background: var(--rust); }
+  .sev-text {
+    margin-left: 0.45rem;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+    color: var(--muted);
+    white-space: nowrap;
+  }
 
   .form-grid {
     display: grid;
@@ -556,6 +563,13 @@
   }
   .sev-picker button:hover { border-color: var(--ink); color: var(--ink); }
   .sev-picker button.selected { background: var(--rust); border-color: var(--rust); color: white; font-weight: 600; }
+  .severity-scale-note {
+    margin-top: 0.45rem;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+    color: var(--muted);
+    line-height: 1.5;
+  }
 
   .entry-table-wrap { margin-top: 2rem; }
 
@@ -782,6 +796,205 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
+  .view-switch {
+    display: flex;
+    gap: 0.85rem;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.95rem clamp(0.9rem, 3vw, 2.5rem);
+    background: linear-gradient(135deg, rgba(42, 107, 110, 0.1), rgba(201, 153, 58, 0.08));
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .view-toggle-group {
+    display: flex;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+  }
+  .view-toggle-group .btn.active {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+  .view-switch-note {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--muted);
+    max-width: 70ch;
+  }
+  .form-note {
+    margin: -0.45rem 0 1rem;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+  .readonly-input {
+    background: #f0ece3;
+    color: var(--ink);
+  }
+  .dashboard-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.2rem;
+  }
+  .summary-shell,
+  .explanation-card,
+  .insight-card,
+  .validation-banner {
+    background: white;
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+  }
+  .summary-shell {
+    border: 1px solid rgba(200, 191, 174, 0.95);
+    padding: 1.15rem;
+    margin-bottom: 1.5rem;
+  }
+  .summary-shell h3,
+  .insight-card h3,
+  .explanation-card h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.05rem;
+    margin-bottom: 0.45rem;
+  }
+  .summary-list,
+  .evidence-list,
+  .reading-list {
+    display: grid;
+    gap: 0.65rem;
+    margin-top: 0.85rem;
+  }
+  .summary-item,
+  .reading-item {
+    padding: 0.85rem 0.95rem;
+    border-radius: 12px;
+    background: var(--cream);
+    border: 1px solid rgba(200, 191, 174, 0.95);
+  }
+  .summary-item p,
+  .reading-item p,
+  .insight-card p,
+  .explanation-card p {
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .explanation-grid,
+  .insight-grid,
+  .signal-grid,
+  .stakeholder-grid {
+    display: grid;
+    gap: 1rem;
+    margin-bottom: 1.6rem;
+  }
+  .explanation-grid {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+  .insight-grid {
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  }
+  .signal-grid,
+  .stakeholder-grid {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+  .explanation-card,
+  .insight-card {
+    padding: 1rem;
+    border: 1px solid rgba(200, 191, 174, 0.95);
+  }
+  .stat-pair {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+    margin: 0.9rem 0;
+  }
+  .stat-block {
+    padding: 0.7rem 0.75rem;
+    border-radius: 10px;
+    background: var(--cream);
+  }
+  .stat-block .label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+  .stat-block .value {
+    display: block;
+    margin-top: 0.25rem;
+    font-family: 'Playfair Display', serif;
+    font-size: 1.35rem;
+    color: var(--ink);
+  }
+  .evidence-list blockquote {
+    margin: 0;
+    padding: 0.8rem 0.9rem;
+    border-left: 3px solid var(--gold);
+    background: #fbf8f1;
+    color: var(--ink);
+    font-size: 0.9rem;
+    line-height: 1.55;
+  }
+  .confidence-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.25rem 0.65rem;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    border: 1px solid var(--border);
+    background: var(--cream);
+    color: var(--muted);
+  }
+  .confidence-pill.high {
+    color: var(--access);
+    background: #e8f3e8;
+  }
+  .confidence-pill.moderate {
+    color: var(--distribution);
+    background: #e6f0f0;
+  }
+  .confidence-pill.emergent {
+    color: var(--production);
+    background: #fdeee9;
+  }
+  .signal-card .signal-head,
+  .insight-card .card-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    margin-bottom: 0.8rem;
+  }
+  .signal-card .meta-row,
+  .insight-card .meta-row {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+  }
+  .signal-card .narrative {
+    margin-top: 0.6rem;
+  }
+  .validation-banner {
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border: 1px solid rgba(201, 74, 46, 0.22);
+    background: #fff8f6;
+  }
+  .validation-banner ul {
+    margin: 0.75rem 0 0 1rem;
+    color: var(--muted);
+  }
+  .muted-inline {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
 
   @media (max-width: 1024px) {
     .index-hero {
@@ -804,6 +1017,11 @@
 
     .pipeline-strip {
       grid-template-columns: 1fr 1fr;
+    }
+
+    .view-switch {
+      padding-left: 1rem;
+      padding-right: 1rem;
     }
   }
 
@@ -880,6 +1098,10 @@
     .no-data-msg {
       font-size: 0.75rem;
     }
+
+    .stat-pair {
+      grid-template-columns: 1fr;
+    }
   }
 
   @media (max-width: 560px) {
@@ -930,13 +1152,21 @@
   <p>Philippine Book Publishing Industry Analysis</p>
 </header>
 
+<section class="view-switch">
+  <div class="view-toggle-group">
+    <button class="btn btn-secondary active" id="encoderViewBtn" type="button" onclick="setAppView('encoder')">Encoder View</button>
+    <button class="btn btn-secondary" id="clientViewBtn" type="button" onclick="setAppView('client')">Client View</button>
+  </div>
+  <div class="view-switch-note">Encoder View keeps coding, editing, and source management together. Client View turns the same encoded dataset into readable summaries, policy signals, and evidence-backed interpretations.</div>
+</section>
+
 <nav id="mainNav">
-  <button class="active" onclick="switchTab('entry', this)">01 · Data Entry</button>
-  <button onclick="switchTab('dashboard', this)">02 · Dashboard</button>
-  <button onclick="switchTab('indicators', this)">03 · Indicators</button>
-  <button onclick="switchTab('comparison', this)">04 · Comparisons</button>
-  <button onclick="switchTab('priority', this)">05 · Priority Signals</button>
-  <button onclick="switchTab('dataset', this)">06 · Dataset</button>
+  <button class="active" data-tab="entry" data-view="encoder" onclick="switchTab('entry', this)">01 · Encoder Entry</button>
+  <button data-tab="dashboard" data-view="client" onclick="switchTab('dashboard', this)">02 · Client Dashboard</button>
+  <button data-tab="indicators" data-view="client" onclick="switchTab('indicators', this)">03 · Indicators</button>
+  <button data-tab="comparison" data-view="client" onclick="switchTab('comparison', this)">04 · Perspectives</button>
+  <button data-tab="priority" data-view="client" onclick="switchTab('priority', this)">05 · Policy Signals</button>
+  <button data-tab="dataset" data-view="encoder" onclick="switchTab('dataset', this)">06 · Encoded Dataset</button>
 </nav>
 
 <main>
@@ -946,12 +1176,12 @@
   <section class="auth-shell">
     <div class="auth-summary">
       <div class="auth-kicker">Persistent Workspace</div>
-      <h2>Sign in to save and reload your segment history</h2>
+      <h2>Sign in to save and reload your encoded segment history</h2>
       <div class="auth-meta">
         <span class="auth-state-pill" id="authStatePill">Local Only</span>
         <span class="auth-user-email" id="authUserEmail">Not signed in</span>
       </div>
-      <div class="auth-note" id="authSyncNote">Note: This is an optional feature. You can still use all functionalities without signing in, but your data will not be saved after refreshing or closing the page.</div>
+      <div class="auth-note" id="authSyncNote">You can work locally without signing in. Cloud sync becomes available after the Supabase schema is updated to the richer CIPQ record structure.</div>
     </div>
     <div class="auth-form-card">
       <div class="auth-form-grid">
@@ -965,89 +1195,108 @@
         </div>
       </div>
       <div class="auth-actions">
-        <button class="btn btn-primary" id="authLoginBtn" onclick="signInUser()">Log In</button>
-        <button class="btn btn-secondary" id="authSignupBtn" onclick="signUpUser()">Create Account</button>
-        <button class="btn btn-secondary" id="authLogoutBtn" onclick="signOutUser()">Log Out</button>
+        <button class="btn btn-primary" id="authLoginBtn" type="button" onclick="signInUser()">Log In</button>
+        <button class="btn btn-secondary" id="authSignupBtn" type="button" onclick="signUpUser()">Create Account</button>
+        <button class="btn btn-secondary" id="authLogoutBtn" type="button" onclick="signOutUser()">Log Out</button>
       </div>
     </div>
   </section>
 
-  <div id="tab-entry" class="tab-panel active">
-    <div class="section-title">Data Entry <span>Encode narrative segments</span></div>
+  <div id="tab-entry" class="tab-panel active" data-view="encoder">
+    <div class="section-title">Encoder Workspace <span>Controlled coding with validation</span></div>
 
     <div class="upload-area" id="uploadZone" onclick="document.getElementById('fileInput').click()">
-      <span class="icon">📂</span>
+      <span class="icon">CSV</span>
       <h3>Import Existing Dataset</h3>
-      <p>Drop a CSV file here or click to browse · Must match CIPQ dataset structure</p>
+      <p>Drop a CSV file here or click to browse. The importer accepts both the legacy flat format and the richer CIPQ schema fields.</p>
       <div class="upload-meta">
-        <span id="uploadSuccessPill" class="upload-pill">✓ Upload successful</span>
+        <span id="uploadSuccessPill" class="upload-pill">Loaded</span>
         <span id="uploadFilename" class="upload-filename">No file uploaded yet</span>
       </div>
       <input type="file" id="fileInput" accept=".csv" onchange="handleFileUpload(event)">
     </div>
 
     <div class="section-title" style="font-size:1.1rem; margin-top:0.5rem;">Manual Segment Entry</div>
+    <div class="form-note">This form uses the controlled CIPQ codebook. Primary quadrant is inferred from the selected theme code, and indicator choices are constrained to the selected theme.</div>
     <div class="form-grid">
       <div class="form-group">
         <label>Segment ID</label>
-        <input type="text" id="f_segid" placeholder="e.g. FGD1_001">
+        <input type="text" id="f_segid" placeholder="e.g. SEG_0001">
       </div>
       <div class="form-group">
-        <label>Theme</label>
-        <input type="text" id="f_theme" placeholder="e.g. printing cost pressure">
-      </div>
-      <div class="form-group">
-        <label>Open Code</label>
-        <input type="text" id="f_open_code" placeholder="e.g. imported paper dependency">
-      </div>
-      <div class="form-group">
-        <label>CIPQ Domain</label>
-        <select id="f_domain" onchange="updateIndicators()">
-          <option value="">— Select Domain —</option>
-          <option value="Creation">Creation</option>
-          <option value="Production">Production</option>
-          <option value="Distribution">Distribution</option>
-          <option value="Access">Access</option>
+        <label>Theme Code</label>
+        <select id="f_theme_code" onchange="updateThemeSelection()">
+          <option value="">-- Select Theme --</option>
         </select>
+      </div>
+      <div class="form-group">
+        <label>Theme Label</label>
+        <input class="readonly-input" type="text" id="f_theme_label" readonly placeholder="Auto-filled from codebook">
+      </div>
+      <div class="form-group">
+        <label>Primary Quadrant</label>
+        <input class="readonly-input" type="text" id="f_domain" readonly placeholder="Auto-filled from theme">
       </div>
       <div class="form-group">
         <label>Indicator Code</label>
-        <select id="f_indicator">
-          <option value="">— Select Domain First —</option>
+        <select id="f_indicator" onchange="updateIndicatorMetadata()">
+          <option value="">-- Select Theme First --</option>
         </select>
+      </div>
+      <div class="form-group">
+        <label>Indicator Label</label>
+        <input class="readonly-input" type="text" id="f_indicator_label" readonly placeholder="Auto-filled from codebook">
       </div>
       <div class="form-group">
         <label>Stakeholder Group</label>
         <select id="f_stakeholder">
-          <option value="">— Select —</option>
-          <option>Publisher</option>
+          <option value="">-- Select --</option>
           <option>Author</option>
-          <option>Illustrator</option>
-          <option>Editor</option>
+          <option>Publisher</option>
+          <option>Printer</option>
           <option>Distributor</option>
           <option>Bookseller</option>
           <option>Librarian</option>
           <option>Reader</option>
+          <option>Government</option>
           <option>Other</option>
         </select>
       </div>
       <div class="form-group">
+        <label>Respondent Type</label>
+        <input type="text" id="f_respondent_type" placeholder="e.g. Independent publisher">
+      </div>
+      <div class="form-group">
         <label>Region</label>
         <select id="f_region">
-          <option value="">— Select —</option>
-          <option>NCR</option><option>CAR</option><option>Region I</option>
-          <option>Region II</option><option>Region III</option><option>Region IV-A</option>
-          <option>Region IV-B</option><option>Region V</option><option>Region VI</option>
-          <option>Region VII</option><option>Region VIII</option><option>Region IX</option>
-          <option>Region X</option><option>Region XI</option><option>Region XII</option>
-          <option>Region XIII</option><option>BARMM</option><option>Visayas</option>
-          <option>Mindanao</option><option>Luzon</option>
+          <option value="">-- Select --</option>
+          <option>NCR</option>
+          <option>CAR</option>
+          <option>Region I</option>
+          <option>Region II</option>
+          <option>Region III</option>
+          <option>Region IV-A</option>
+          <option>Region IV-B</option>
+          <option>Region V</option>
+          <option>Region VI</option>
+          <option>Region VII</option>
+          <option>Region VIII</option>
+          <option>Region IX</option>
+          <option>Region X</option>
+          <option>Region XI</option>
+          <option>Region XII</option>
+          <option>Region XIII</option>
+          <option>BARMM</option>
+          <option>Luzon</option>
+          <option>Visayas</option>
+          <option>Mindanao</option>
+          <option>Unknown</option>
         </select>
       </div>
       <div class="form-group">
-        <label>Secondary Domain (Optional)</label>
+        <label>Secondary Quadrant</label>
         <select id="f_domain_secondary">
-          <option value="">— None —</option>
+          <option value="">-- None --</option>
           <option value="Creation">Creation</option>
           <option value="Production">Production</option>
           <option value="Distribution">Distribution</option>
@@ -1057,108 +1306,135 @@
       <div class="form-group">
         <label>Source Type</label>
         <select id="f_source_type">
-          <option value="">— Select —</option>
+          <option value="">-- Select --</option>
           <option>FGD</option>
           <option>KII</option>
           <option>Survey</option>
-          <option>Other</option>
+          <option>Document</option>
         </select>
+      </div>
+      <div class="form-group">
+        <label>Source ID</label>
+        <input type="text" id="f_source_id" placeholder="e.g. FGD_03">
       </div>
       <div class="form-group">
         <label>Session ID</label>
         <input type="text" id="f_session" placeholder="e.g. KII_NCR_01">
       </div>
-      <div class="form-group full">
-        <label>Narrative Snippet</label>
-        <textarea id="f_snippet" placeholder="Paste the stakeholder statement here…"></textarea>
+      <div class="form-group">
+        <label>Scoring Confidence</label>
+        <select id="f_confidence">
+          <option value="low">Low</option>
+          <option value="medium" selected>Medium</option>
+          <option value="high">High</option>
+        </select>
       </div>
       <div class="form-group full">
-        <label>Severity Score (1 = Minor · 5 = Critical)</label>
+        <label>Narrative Snippet</label>
+        <textarea id="f_snippet" placeholder="Paste the quoted or paraphrased excerpt here."></textarea>
+      </div>
+      <div class="form-group full">
+        <label>Analysis Notes</label>
+        <textarea id="f_analysis_notes" placeholder="Optional notes for coders, cross-quadrant links, or interpretation context."></textarea>
+      </div>
+      <div class="form-group full">
+        <label>Severity Score</label>
         <div class="sev-picker" id="sevPicker">
-          <button type="button" onclick="setSeverity(1)">1</button>
-          <button type="button" onclick="setSeverity(2)">2</button>
-          <button type="button" onclick="setSeverity(3)">3</button>
-          <button type="button" onclick="setSeverity(4)">4</button>
-          <button type="button" onclick="setSeverity(5)">5</button>
+          <button type="button" onclick="setSeverity(1)" title="1 - Minimal">1</button>
+          <button type="button" onclick="setSeverity(2)" title="2 - Low">2</button>
+          <button type="button" onclick="setSeverity(3)" title="3 - Moderate">3</button>
+          <button type="button" onclick="setSeverity(4)" title="4 - High">4</button>
+          <button type="button" onclick="setSeverity(5)" title="5 - Critical">5</button>
         </div>
+        <div class="severity-scale-note">1 - Minimal | 2 - Low | 3 - Moderate | 4 - High | 5 - Critical</div>
         <input type="hidden" id="f_severity" value="">
       </div>
     </div>
 
     <div class="actions-row">
-      <button class="btn btn-primary" onclick="addSegment()">+ Add Segment</button>
-      <button class="btn btn-secondary" onclick="clearForm()">Clear Form</button>
-      <button class="btn btn-secondary" onclick="exportCSV()">⬇ Export CSV</button>
+      <button class="btn btn-primary" type="button" onclick="addSegment()">Add Segment</button>
+      <button class="btn btn-secondary" type="button" onclick="clearForm()">Clear Form</button>
+      <button class="btn btn-secondary" type="button" onclick="exportCSV()">Export CSV</button>
+      <button class="btn btn-secondary" type="button" onclick="exportInterpretiveJson()">Export JSON</button>
       <span class="count-badge" id="segCount">0 segments loaded</span>
     </div>
 
     <div class="entry-table-wrap" id="entryPreview"></div>
   </div>
 
-  <div id="tab-dashboard" class="tab-panel">
+  <div id="tab-dashboard" class="tab-panel" data-view="client">
+    <div class="dashboard-actions">
+      <button class="btn btn-secondary" type="button" onclick="exportInterpretiveJson()">Export Dashboard JSON</button>
+      <button class="btn btn-secondary" type="button" onclick="downloadClientReport()">Download Client Report</button>
+    </div>
     <div id="dashContent">
-      <div class="no-data-msg">No data yet. Enter segments in the Data Entry tab to see the dashboard.</div>
+      <div class="no-data-msg">No data yet. Encode or import segments in Encoder View to generate client-facing insights.</div>
     </div>
   </div>
 
-  <div id="tab-indicators" class="tab-panel">
-    <div class="section-title">Indicator Analysis <span>Frequency & severity per indicator</span></div>
+  <div id="tab-indicators" class="tab-panel" data-view="client">
+    <div class="section-title">Indicator Analysis <span>Frequency, severity, spread, and confidence</span></div>
     <div class="filter-row">
-      <label>Domain:</label>
+      <label>Quadrant:</label>
       <select id="indFilterDomain" onchange="renderIndicators()">
-        <option value="">All Domains</option>
-        <option>Creation</option><option>Production</option>
-        <option>Distribution</option><option>Access</option>
+        <option value="">All Quadrants</option>
+        <option>Creation</option>
+        <option>Production</option>
+        <option>Distribution</option>
+        <option>Access</option>
       </select>
     </div>
     <div id="indicatorContent">
-      <div class="no-data-msg">No data yet. Enter segments in the Data Entry tab.</div>
+      <div class="no-data-msg">No data yet. Encode or import segments in Encoder View.</div>
     </div>
     <div id="indicatorTraceability"></div>
   </div>
 
-  <div id="tab-comparison" class="tab-panel">
-    <div class="section-title">Comparative Analysis <span>Stakeholder & regional breakdown</span></div>
+  <div id="tab-comparison" class="tab-panel" data-view="client">
+    <div class="section-title">Stakeholder Perspectives <span>Stakeholder and regional comparison</span></div>
     <div id="compContent">
-      <div class="no-data-msg">No data yet. Enter segments in the Data Entry tab.</div>
+      <div class="no-data-msg">No data yet. Encode or import segments in Encoder View.</div>
     </div>
   </div>
 
-  <div id="tab-priority" class="tab-panel">
-    <div class="section-title">Priority Policy Signals <span>High severity · High frequency</span></div>
+  <div id="tab-priority" class="tab-panel" data-view="client">
+    <div class="section-title">Priority Policy Signals <span>Classified signals with narratives and evidence</span></div>
     <div class="filter-row">
       <label>Min Severity:</label>
       <select id="minSev" onchange="renderPriority()">
-        <option value="3.5">≥ 3.5</option>
-        <option value="4.0" selected>≥ 4.0</option>
-        <option value="4.5">≥ 4.5</option>
+        <option value="3.5">>= 3.5</option>
+        <option value="4.0" selected>>= 4.0</option>
+        <option value="4.5">>= 4.5</option>
       </select>
-      <label>Min Count:</label>
+      <label>Min Frequency:</label>
       <select id="minCount" onchange="renderPriority()">
-        <option value="1">≥ 1</option>
-        <option value="2">≥ 2</option>
-        <option value="3" selected>≥ 3</option>
-        <option value="5">≥ 5</option>
+        <option value="1">>= 1</option>
+        <option value="2">>= 2</option>
+        <option value="3" selected>>= 3</option>
+        <option value="5">>= 5</option>
       </select>
     </div>
     <div id="priorityContent">
-      <div class="no-data-msg">No data yet. Enter segments in the Data Entry tab.</div>
+      <div class="no-data-msg">No data yet. Encode or import segments in Encoder View.</div>
     </div>
   </div>
 
-  <div id="tab-dataset" class="tab-panel">
-    <div class="section-title">Full Dataset <span>All coded segments</span></div>
+  <div id="tab-dataset" class="tab-panel" data-view="encoder">
+    <div class="section-title">Encoded Dataset <span>Validation-ready record view</span></div>
     <div class="actions-row">
-      <button class="btn btn-secondary" onclick="exportCSV()">⬇ Export CSV</button>
-      <button class="btn btn-secondary" onclick="if(confirm('Delete ALL segments?')) { dataset=[]; refreshAll(); }">🗑 Clear All</button>
+      <button class="btn btn-secondary" type="button" onclick="exportCSV()">Export CSV</button>
+      <button class="btn btn-secondary" type="button" onclick="exportInterpretiveJson()">Export JSON</button>
+      <button class="btn btn-secondary" type="button" onclick="if(confirm('Delete all segments?')) { clearAllSegments(); }">Clear All</button>
       <span class="count-badge" id="datasetCount">0 segments</span>
     </div>
     <div class="filter-row">
-      <label>Filter Domain:</label>
+      <label>Filter Quadrant:</label>
       <select id="dsFilterDomain" onchange="renderDataset()">
         <option value="">All</option>
-        <option>Creation</option><option>Production</option>
-        <option>Distribution</option><option>Access</option>
+        <option>Creation</option>
+        <option>Production</option>
+        <option>Distribution</option>
+        <option>Access</option>
       </select>
       <label>Stakeholder:</label>
       <select id="dsFilterStakeholder" onchange="renderDataset()">
@@ -1172,1004 +1448,6 @@
 
 </main>
 
-<script>
-let dataset = [];
-let currentSeverity = null;
-let activeTraceCode = null;
-const expandedSnippetIds = new Set();
-const SUPABASE_URL = 'https://ueyyrugaynzczkcwnxbt.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVleXlydWdheW56Y3prY3dueGJ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5NDEyOTIsImV4cCI6MjA5MjUxNzI5Mn0.x1XqiUs52OH4TKe070OSOK4c0gSGeYRSZJ30XZSBSuQ';
-const SUPABASE_TABLE = 'segments';
-const supabaseReady = SUPABASE_URL.startsWith('https://') && !SUPABASE_URL.includes('YOUR_PROJECT_ID') && !!SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.includes('YOUR_SUPABASE');
-const supabaseClient = supabaseReady ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true
-  }
-}) : null;
-let currentSession = null;
-let currentUser = null;
-let isCloudSyncing = false;
-
-const INDICATORS = {
-  Creation: [
-    ['C1','Contract Fairness'],
-    ['C2','Royalty Transparency'],
-    ['C3','Copyright Protection'],
-    ['C4','Curriculum Volatility'],
-    ['C5','Creator Income Stability']
-  ],
-  Production: [
-    ['P1','Editorial Workflow Compression'],
-    ['P2','Printing Cost Volatility'],
-    ['P3','Import Dependence'],
-    ['P4','Small Print Run Constraint'],
-    ['P5','Production Quality Risk'],
-    ['G1','Procurement Policy Volatility'],
-    ['G2','Payment Delay Risk'],
-    ['G3','Evaluation Transparency'],
-    ['G4','Institutional Coordination Gap']
-  ],
-  Distribution: [
-    ['D1','Logistics Cost Burden'],
-    ['D2','Infrastructure Deficit'],
-    ['D3','Publisher Distribution Overload'],
-    ['D4','Regional Access Inequality'],
-    ['D5','Disaster Logistics Risk']
-  ],
-  Access: [
-    ['A1','Library Infrastructure Weakness'],
-    ['A2','School Library Accessibility'],
-    ['A3','Reading Culture Support'],
-    ['A4','Digital Infrastructure Gap'],
-    ['A5','Digital Market Readiness']
-  ]
-};
-
-const DOMAIN_CLASS = { Creation:'creation', Production:'production', Distribution:'distribution', Access:'access' };
-const VALID_DOMAINS = ['Creation','Production','Distribution','Access'];
-const LEGACY_DOMAIN_MAP = { Governance: 'Production' };
-
-function ensureUniqueSegmentId(baseId, takenIds = null) {
-  const ids = takenIds || new Set(dataset.map(r => r.Segment_ID));
-  const safeBase = (baseId || `SEG_${Date.now()}`).trim();
-  let candidate = safeBase;
-  let suffix = 1;
-  while (ids.has(candidate)) {
-    candidate = `${safeBase}_${suffix}`;
-    suffix += 1;
-  }
-  ids.add(candidate);
-  return candidate;
-}
-
-function normalizeSegmentRecord(record) {
-  return {
-    Segment_ID: record.Segment_ID,
-    Snippet: record.Snippet || '',
-    Theme: record.Theme || '',
-    Open_Code: record.Open_Code || '',
-    CIPQ_Domain: record.CIPQ_Domain,
-    Secondary_Domain: record.Secondary_Domain || '',
-    Indicator_Code: record.Indicator_Code,
-    Indicator_Name: record.Indicator_Name,
-    Severity: parseInt(record.Severity, 10),
-    Stakeholder: record.Stakeholder || '',
-    Region: record.Region || '',
-    Source_Type: record.Source_Type || '',
-    Session_ID: record.Session_ID || '',
-    DB_ID: record.DB_ID || null,
-    Created_At: record.Created_At || null
-  };
-}
-
-function chunkItems(items, size) {
-  const chunks = [];
-  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
-  return chunks;
-}
-
-function mapSegmentToDbRow(record) {
-  return {
-    user_id: currentUser?.id,
-    segment_id: record.Segment_ID,
-    snippet: record.Snippet,
-    theme: record.Theme || null,
-    open_code: record.Open_Code || null,
-    cipq_domain: record.CIPQ_Domain,
-    secondary_domain: record.Secondary_Domain || null,
-    indicator_code: record.Indicator_Code,
-    indicator_name: record.Indicator_Name,
-    severity: record.Severity,
-    stakeholder: record.Stakeholder || null,
-    region: record.Region || null,
-    source_type: record.Source_Type || null,
-    session_id: record.Session_ID || null
-  };
-}
-
-function mapDbRowToSegment(row) {
-  return normalizeSegmentRecord({
-    Segment_ID: row.segment_id,
-    Snippet: row.snippet,
-    Theme: row.theme,
-    Open_Code: row.open_code,
-    CIPQ_Domain: row.cipq_domain,
-    Secondary_Domain: row.secondary_domain,
-    Indicator_Code: row.indicator_code,
-    Indicator_Name: row.indicator_name,
-    Severity: row.severity,
-    Stakeholder: row.stakeholder,
-    Region: row.region,
-    Source_Type: row.source_type,
-    Session_ID: row.session_id,
-    DB_ID: row.id,
-    Created_At: row.created_at
-  });
-}
-
-function authCredentials() {
-  return {
-    email: document.getElementById('auth_email').value.trim(),
-    password: document.getElementById('auth_password').value
-  };
-}
-
-function clearAuthForm() {
-  document.getElementById('auth_email').value = '';
-  document.getElementById('auth_password').value = '';
-}
-
-function setCloudSyncing(syncing) {
-  isCloudSyncing = syncing;
-  renderAuthUI();
-}
-
-function renderAuthUI() {
-  const pill = document.getElementById('authStatePill');
-  const email = document.getElementById('authUserEmail');
-  const note = document.getElementById('authSyncNote');
-  const loginBtn = document.getElementById('authLoginBtn');
-  const signupBtn = document.getElementById('authSignupBtn');
-  const logoutBtn = document.getElementById('authLogoutBtn');
-  const emailInput = document.getElementById('auth_email');
-  const passwordInput = document.getElementById('auth_password');
-  if (!pill || !email || !note || !loginBtn || !signupBtn || !logoutBtn || !emailInput || !passwordInput) return;
-  const authInputsDisabled = !supabaseReady || isCloudSyncing;
-
-  emailInput.disabled = authInputsDisabled || !!currentUser;
-  passwordInput.disabled = authInputsDisabled || !!currentUser;
-  loginBtn.disabled = authInputsDisabled || !!currentUser;
-  signupBtn.disabled = authInputsDisabled || !!currentUser;
-  logoutBtn.disabled = !supabaseReady || isCloudSyncing || !currentUser;
-
-  pill.className = 'auth-state-pill';
-  if (!supabaseReady) {
-    pill.textContent = 'Local Only';
-    email.textContent = 'Supabase not configured';
-    note.textContent = 'Supabase is not configured yet. Add your project URL and publishable key in the script block before deploying to GitHub Pages.';
-    return;
-  }
-
-  if (isCloudSyncing) {
-    pill.textContent = 'Syncing';
-    pill.classList.add('syncing');
-    email.textContent = currentUser?.email || 'Preparing workspace';
-    note.textContent = 'Syncing your saved segment history from Supabase.';
-    return;
-  }
-
-  if (currentUser) {
-    pill.textContent = 'Cloud Sync On';
-    pill.classList.add('connected');
-    email.textContent = currentUser.email || 'Signed in';
-    note.textContent = `Signed in. Refresh-safe history is active and scoped to this account. ${dataset.length} saved segment${dataset.length !== 1 ? 's' : ''} currently loaded.`;
-    return;
-  }
-
-  pill.textContent = 'Ready To Sign In';
-  email.textContent = 'No active user session';
-  note.textContent = 'Sign in or create an account to save segment history to Supabase. Until then, changes stay only in this browser session.';
-}
-
-async function loadSegmentsFromSupabase(options = {}) {
-  if (!supabaseClient || !currentUser) {
-    dataset = [];
-    expandedSnippetIds.clear();
-    refreshAll();
-    renderAuthUI();
-    return;
-  }
-
-  setCloudSyncing(true);
-  const { data, error } = await supabaseClient
-    .from(SUPABASE_TABLE)
-    .select('*')
-    .order('created_at', { ascending: true })
-    .order('segment_id', { ascending: true });
-
-  if (error) {
-    setCloudSyncing(false);
-    showStatus(`Could not load saved segments: ${error.message}`, true);
-    return;
-  }
-
-  dataset = (data || []).map(mapDbRowToSegment);
-  expandedSnippetIds.clear();
-  refreshAll();
-  setCloudSyncing(false);
-
-  if (!options.silent) {
-    showStatus(`Loaded ${dataset.length} saved segment${dataset.length !== 1 ? 's' : ''} from Supabase.`, false);
-  }
-}
-
-function syncClearAllButton() {
-  const buttons = Array.from(document.querySelectorAll('#tab-dataset .actions-row .btn'));
-  const clearButton = buttons.find(btn => btn.textContent.includes('Clear All'));
-  if (clearButton) clearButton.onclick = () => clearAllSegments();
-}
-
-async function handleSessionChange(session, options = {}) {
-  currentSession = session || null;
-  currentUser = session?.user || null;
-
-  if (!currentUser) {
-    dataset = [];
-    expandedSnippetIds.clear();
-    refreshAll();
-    renderAuthUI();
-    return;
-  }
-
-  await loadSegmentsFromSupabase({ silent: !!options.silent });
-}
-
-async function initializeAuth() {
-  renderAuthUI();
-  syncClearAllButton();
-  if (!supabaseClient) return;
-
-  const { data, error } = await supabaseClient.auth.getSession();
-  if (error) {
-    showStatus(`Could not read saved session: ${error.message}`, true);
-    return;
-  }
-
-  await handleSessionChange(data.session, { silent: true });
-  supabaseClient.auth.onAuthStateChange((event, session) => {
-    handleSessionChange(session, { silent: event === 'INITIAL_SESSION' });
-  });
-}
-
-async function signUpUser() {
-  if (!supabaseClient) {
-    showStatus('Supabase is not configured yet.', true);
-    return;
-  }
-
-  const { email, password } = authCredentials();
-  if (!email || !password) {
-    showStatus('Enter both email and password to create an account.', true);
-    return;
-  }
-
-  setCloudSyncing(true);
-  const { data, error } = await supabaseClient.auth.signUp({
-    email,
-    password,
-    options: { emailRedirectTo: window.location.href.split('#')[0] }
-  });
-  setCloudSyncing(false);
-
-  if (error) {
-    showStatus(`Sign-up failed: ${error.message}`, true);
-    return;
-  }
-
-  clearAuthForm();
-  if (data.session) {
-    showStatus('Account created and signed in. Cloud sync is active.', false);
-    await handleSessionChange(data.session, { silent: true });
-  } else {
-    showStatus('Account created. Check your email if confirmation is required, then log in.', false);
-    renderAuthUI();
-  }
-}
-
-async function signInUser() {
-  if (!supabaseClient) {
-    showStatus('Supabase is not configured yet.', true);
-    return;
-  }
-
-  const { email, password } = authCredentials();
-  if (!email || !password) {
-    showStatus('Enter both email and password to log in.', true);
-    return;
-  }
-
-  setCloudSyncing(true);
-  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-  setCloudSyncing(false);
-
-  if (error) {
-    showStatus(`Login failed: ${error.message}`, true);
-    return;
-  }
-
-  clearAuthForm();
-  await handleSessionChange(data.session, { silent: true });
-  showStatus('Logged in. Saved segment history reloaded from Supabase.', false);
-}
-
-async function signOutUser() {
-  if (!supabaseClient || !currentUser) return;
-
-  setCloudSyncing(true);
-  const { error } = await supabaseClient.auth.signOut();
-  setCloudSyncing(false);
-
-  if (error) {
-    showStatus(`Log out failed: ${error.message}`, true);
-    return;
-  }
-
-  clearAuthForm();
-  await handleSessionChange(null, { silent: true });
-  showStatus('Logged out. Cloud-backed history is hidden until you sign in again.', false);
-}
-
-function switchTab(name, btn = null) {
-  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
-  document.getElementById('tab-' + name).classList.add('active');
-  if (btn) {
-    btn.classList.add('active');
-    btn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-  }
-  if(name==='dashboard') renderDashboard();
-  if(name==='indicators') renderIndicators();
-  if(name==='comparison') renderComparison();
-  if(name==='priority') renderPriority();
-  if(name==='dataset') renderDataset();
-}
-
-function updateIndicators() {
-  const domain = document.getElementById('f_domain').value;
-  const sel = document.getElementById('f_indicator');
-  sel.innerHTML = '<option value="">— Select Indicator —</option>';
-  if(INDICATORS[domain]) {
-    INDICATORS[domain].forEach(([code, name]) => {
-      sel.innerHTML += `<option value="${code}">${code} · ${name}</option>`;
-    });
-  }
-}
-
-function setSeverity(n) {
-  currentSeverity = n;
-  document.getElementById('f_severity').value = n;
-  document.querySelectorAll('.sev-picker button').forEach((b,i) => {
-    b.classList.toggle('selected', i+1 <= n);
-  });
-}
-
-function clearForm() {
-  ['f_segid','f_snippet','f_session','f_theme','f_open_code'].forEach(id => document.getElementById(id).value = '');
-  ['f_domain','f_indicator','f_stakeholder','f_region','f_domain_secondary','f_source_type'].forEach(id => document.getElementById(id).value = '');
-  document.getElementById('f_indicator').innerHTML = '<option value="">— Select Domain First —</option>';
-  currentSeverity = null;
-  document.getElementById('f_severity').value = '';
-  document.querySelectorAll('.sev-picker button').forEach(b => b.classList.remove('selected'));
-}
-
-async function addSegment() {
-  const segid = document.getElementById('f_segid').value.trim();
-  const theme = document.getElementById('f_theme').value.trim();
-  const openCode = document.getElementById('f_open_code').value.trim();
-  const snippet = document.getElementById('f_snippet').value.trim();
-  const domain = document.getElementById('f_domain').value;
-  const secondaryDomain = document.getElementById('f_domain_secondary').value;
-  const indicator = document.getElementById('f_indicator').value;
-  const severity = parseInt(document.getElementById('f_severity').value);
-  const stakeholder = document.getElementById('f_stakeholder').value;
-  const region = document.getElementById('f_region').value;
-  const sourceType = document.getElementById('f_source_type').value;
-  const session = document.getElementById('f_session').value.trim();
-
-  if(!segid || !snippet || (!theme && !openCode) || !domain || !indicator || !severity) {
-    showStatus('Please fill in Segment ID, Theme or Open Code, Snippet, Domain, Indicator, and Severity.', true);
-    return;
-  }
-
-  const finalId = ensureUniqueSegmentId(segid);
-  const indicatorName = INDICATORS[domain].find(([c]) => c===indicator)?.[1] || indicator;
-  const segmentRecord = normalizeSegmentRecord({
-    Segment_ID: finalId,
-    Snippet: snippet,
-    Theme: theme,
-    Open_Code: openCode,
-    CIPQ_Domain: domain,
-    Secondary_Domain: secondaryDomain,
-    Indicator_Code: indicator,
-    Indicator_Name: indicatorName,
-    Severity: severity,
-    Stakeholder: stakeholder,
-    Region: region,
-    Source_Type: sourceType,
-    Session_ID: session
-  });
-
-  if (supabaseClient && currentUser) {
-    setCloudSyncing(true);
-    const { data, error } = await supabaseClient
-      .from(SUPABASE_TABLE)
-      .insert(mapSegmentToDbRow(segmentRecord))
-      .select()
-      .single();
-    setCloudSyncing(false);
-
-    if (error) {
-      showStatus(`Could not save segment to Supabase: ${error.message}`, true);
-      return;
-    }
-
-    dataset.push(mapDbRowToSegment(data));
-    showStatus(`Segment ${finalId} saved to Supabase. Total: ${dataset.length}`, false);
-  } else {
-    dataset.push(segmentRecord);
-    showStatus(`Segment ${finalId} added locally. Sign in to keep it after refresh.`, false);
-  }
-
-  clearForm();
-  refreshAll();
-}
-
-const uploadZone = document.getElementById('uploadZone');
-uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
-uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
-uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('drag-over'); if(e.dataTransfer.files[0]) parseCSV(e.dataTransfer.files[0]); });
-
-function handleFileUpload(e) { if(e.target.files[0]) { updateUploadMeta(e.target.files[0].name, false); parseCSV(e.target.files[0]); } }
-
-function parseCSV(file) {
-  Papa.parse(file, {
-    header: true, skipEmptyLines: true,
-    complete: async (results) => {
-      const rows = results.data;
-      let added = 0;
-      const importedSegments = [];
-      const takenIds = new Set(dataset.map(r => r.Segment_ID));
-      rows.forEach(r => {
-        const rawDomain = r.CIPQ_Domain || r.Domain || '';
-        const domain = LEGACY_DOMAIN_MAP[rawDomain] || rawDomain;
-        const code = r.Indicator_Code || r.Indicator || '';
-        const sev = parseInt(r.Severity);
-        if(!VALID_DOMAINS.includes(domain) || !code || isNaN(sev)) return;
-        const indicatorName = r.Indicator_Name || (INDICATORS[domain]?.find(([c])=>c===code)?.[1] || code);
-        const legacyThemeCode = r.Theme_Code || '';
-        const theme = r.Theme || (!r.Open_Code && !r.OpenCode && !r.Code ? legacyThemeCode : '');
-        const openCode = r.Open_Code || r.OpenCode || r.Code || '';
-        importedSegments.push(normalizeSegmentRecord({
-          Segment_ID: ensureUniqueSegmentId(r.Segment_ID || ('IMP_' + Date.now() + '_' + added), takenIds),
-          Snippet: r.Snippet || r.Text || r.Quote || '',
-          Theme: theme,
-          Open_Code: openCode,
-          CIPQ_Domain: domain,
-          Secondary_Domain: LEGACY_DOMAIN_MAP[r.Secondary_Domain] || r.Secondary_Domain || '',
-          Indicator_Code: code,
-          Indicator_Name: indicatorName,
-          Severity: sev,
-          Stakeholder: r.Stakeholder || '',
-          Region: r.Region || '',
-          Source_Type: r.Source_Type || r.Source || '',
-          Session_ID: r.Session_ID || ''
-        }));
-        added++;
-      });
-
-      if (supabaseClient && currentUser && importedSegments.length) {
-        setCloudSyncing(true);
-        let error = null;
-        for (const batch of chunkItems(importedSegments, 200)) {
-          const result = await supabaseClient
-            .from(SUPABASE_TABLE)
-            .insert(batch.map(mapSegmentToDbRow));
-          if (result.error) {
-            error = result.error;
-            break;
-          }
-        }
-        setCloudSyncing(false);
-
-        if (error) {
-          showStatus(`CSV import reached Supabase but failed to save: ${error.message}`, true);
-          updateUploadMeta(file.name, false);
-          return;
-        }
-
-        await loadSegmentsFromSupabase({ silent: true });
-      } else {
-        dataset.push(...importedSegments);
-      }
-
-      updateUploadMeta(file.name, added > 0);
-      const syncLabel = supabaseClient && currentUser ? ' and saved to Supabase' : ' locally';
-      showStatus(`Imported ${added} segments from CSV${syncLabel}. Total: ${dataset.length}`, false);
-      refreshAll();
-    },
-    error: () => showStatus('Error parsing CSV file.', true)
-  });
-}
-
-function exportCSV() {
-  if(!dataset.length) { showStatus('No data to export.', true); return; }
-  const csv = Papa.unparse(dataset.map(r => ({
-    Segment_ID: r.Segment_ID,
-    Snippet: r.Snippet,
-    Theme: r.Theme || '',
-    Open_Code: r.Open_Code || '',
-    CIPQ_Domain: r.CIPQ_Domain,
-    Secondary_Domain: r.Secondary_Domain || '',
-    Indicator_Code: r.Indicator_Code,
-    Indicator_Name: r.Indicator_Name,
-    Severity: r.Severity,
-    Stakeholder: r.Stakeholder,
-    Region: r.Region,
-    Source_Type: r.Source_Type || '',
-    Session_ID: r.Session_ID
-  })));
-  const blob = new Blob([csv], {type:'text/csv'});
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-  a.download = 'CIPQ_Dataset_' + new Date().toISOString().slice(0,10) + '.csv';
-  a.click();
-}
-
-function aggregate() {
-  const indMap = {};
-  dataset.forEach(r => {
-    const key = r.Indicator_Code;
-    if(!indMap[key]) indMap[key] = { code: key, name: r.Indicator_Name, domain: r.CIPQ_Domain, count: 0, total: 0, segments: [] };
-    indMap[key].count++;
-    indMap[key].total += r.Severity;
-    indMap[key].segments.push(r);
-  });
-  Object.values(indMap).forEach(v => v.avg = v.total / v.count);
-
-  const domMap = {};
-  dataset.forEach(r => {
-    if(!domMap[r.CIPQ_Domain]) domMap[r.CIPQ_Domain] = { scores: [], count: 0, severities: [] };
-    domMap[r.CIPQ_Domain].count++;
-    domMap[r.CIPQ_Domain].severities.push(r.Severity);
-  });
-  Object.values(indMap).forEach(v => {
-    if(!domMap[v.domain]) domMap[v.domain] = { scores: [], count: 0, severities: [] };
-    domMap[v.domain].scores.push(v.avg);
-  });
-  Object.values(domMap).forEach(v => {
-    v.score = v.scores.length ? v.scores.reduce((a,b)=>a+b,0)/v.scores.length : 0;
-    const segAvg = v.severities.length ? v.severities.reduce((a,b)=>a+b,0)/v.severities.length : 0;
-    const variance = v.severities.length ? v.severities.reduce((a,b)=>a + Math.pow(b - segAvg, 2), 0) / v.severities.length : 0;
-    v.stdDev = Math.sqrt(variance);
-    v.variationLabel = v.stdDev < 0.75 ? 'Low spread' : v.stdDev < 1.25 ? 'Moderate spread' : 'High spread';
-  });
-
-  const domScores = VALID_DOMAINS.map(d => domMap[d]?.score || 0);
-  const activeScores = domScores.filter(s => s > 0);
-  const cipqIndex = activeScores.length ? activeScores.reduce((a,b)=>a+b,0)/activeScores.length : 0;
-
-  return { indMap, domMap, cipqIndex, cipqMethod: 'CIPQ Index = average of the active domain severity scores (Creation, Production, Distribution, Access).' };
-}
-
-function updateUploadMeta(filename = 'No file uploaded yet', success = false) {
-  const nameEl = document.getElementById('uploadFilename');
-  const pill = document.getElementById('uploadSuccessPill');
-  const zone = document.getElementById('uploadZone');
-  if(nameEl) nameEl.textContent = filename || 'No file uploaded yet';
-  if(pill) pill.classList.toggle('show', !!success);
-  if(zone) zone.classList.toggle('uploaded', !!success);
-}
-
-function openIndicatorTrace(code, tabName = null) {
-  activeTraceCode = code;
-  if (tabName) {
-    const btn = Array.from(document.querySelectorAll('#mainNav button')).find(b => b.getAttribute('onclick')?.includes(`'${tabName}'`));
-    switchTab(tabName, btn || null);
-    return;
-  }
-  renderIndicators();
-}
-
-function closeIndicatorTrace() {
-  activeTraceCode = null;
-  renderIndicators();
-}
-
-function renderTraceability(targetId) {
-  const mount = document.getElementById(targetId);
-  if (!mount) return;
-  if (!activeTraceCode) {
-    mount.innerHTML = '';
-    return;
-  }
-  const rows = dataset.filter(r => r.Indicator_Code === activeTraceCode);
-  if (!rows.length) {
-    mount.innerHTML = '<div class="trace-panel"><div class="trace-empty">No linked segments found for this indicator.</div></div>';
-    return;
-  }
-  const sample = rows[0];
-  const dc = DOMAIN_CLASS[sample.CIPQ_Domain] || '';
-  let html = `<div class="trace-panel">
-    <div class="trace-head">
-      <div>
-        <div class="section-title" style="font-size:1.05rem;margin-bottom:0;border-bottom:none;padding-bottom:0">Indicator Traceability <span>Original coded segments</span></div>
-        <p><strong>${sample.Indicator_Code} · ${sample.Indicator_Name}</strong> · <span class="tag ${dc}">${sample.CIPQ_Domain}</span> · ${rows.length} linked segment${rows.length!==1?'s':''}</p>
-      </div>
-      <button class="btn btn-secondary" type="button" onclick="closeIndicatorTrace()">Close</button>
-    </div>
-    <div class="trace-list">`;
-  rows.forEach(r => {
-    const secondary = r.Secondary_Domain ? `<span class="tag ${DOMAIN_CLASS[r.Secondary_Domain] || ''}">Secondary: ${r.Secondary_Domain}</span>` : '';
-    html += `<div class="trace-item">
-      <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:center">
-        <code style="font-size:0.72rem">${r.Segment_ID}</code>
-        ${sevDots(r.Severity)}
-      </div>
-      ${r.Theme ? `<p><strong>Theme:</strong> ${r.Theme}</p>` : ''}
-      ${r.Open_Code ? `<p><strong>Open Code:</strong> ${r.Open_Code}</p>` : ''}
-      <div class="trace-quote">${r.Snippet || '—'}</div>
-      <div class="trace-meta">
-        <span class="tag ${DOMAIN_CLASS[r.CIPQ_Domain] || ''}">${r.CIPQ_Domain}</span>
-        ${secondary}
-        ${r.Stakeholder ? `<span class="tag">${r.Stakeholder}</span>` : ''}
-        ${r.Region ? `<span class="tag">${r.Region}</span>` : ''}
-        ${r.Source_Type ? `<span class="tag">${r.Source_Type}</span>` : ''}
-        ${r.Session_ID ? `<span class="tag">${r.Session_ID}</span>` : ''}
-      </div>
-    </div>`;
-  });
-  html += '</div></div>';
-  mount.innerHTML = html;
-}
-
-function renderEntryPreview() {
-  const recent = dataset.slice(-5).reverse();
-  if(!recent.length) { document.getElementById('entryPreview').innerHTML = ''; return; }
-  let html = `<div class="section-title" style="font-size:1rem;margin-top:0.5rem;">Recent Entries <span>Last ${recent.length}</span></div><div class="table-wrap"><table><thead><tr><th>Segment ID</th><th>Theme</th><th>Open Code</th><th>Domain</th><th>Indicator</th><th>Severity</th><th>Stakeholder</th><th>Action</th></tr></thead><tbody>`;
-  recent.forEach(r => {
-    const dc = DOMAIN_CLASS[r.CIPQ_Domain]||'';
-    html += `<tr>
-      <td><code style="font-size:0.75rem">${r.Segment_ID}</code></td>
-      <td>${r.Theme || '—'}</td>
-      <td>${r.Open_Code || '—'}</td>
-      <td><span class="tag ${dc}">${r.CIPQ_Domain}</span></td>
-      <td>${r.Indicator_Code} · ${r.Indicator_Name}</td>
-      <td>${sevDots(r.Severity)}</td>
-      <td>${r.Stakeholder||'—'}</td>
-      <td><button class="btn btn-secondary" style="padding:0.45rem 0.65rem;font-size:0.65rem;min-height:36px" onclick="deleteSegment('${r.Segment_ID}')">✕</button></td>
-    </tr>`;
-  });
-  html += '</tbody></table></div>';
-  document.getElementById('entryPreview').innerHTML = html;
-}
-
-async function deleteSegment(id) {
-  const target = dataset.find(r => r.Segment_ID === id);
-  if (!target) return;
-
-  if (supabaseClient && currentUser && target.DB_ID) {
-    setCloudSyncing(true);
-    const { error } = await supabaseClient
-      .from(SUPABASE_TABLE)
-      .delete()
-      .eq('id', target.DB_ID);
-    setCloudSyncing(false);
-
-    if (error) {
-      showStatus(`Could not delete segment from Supabase: ${error.message}`, true);
-      return;
-    }
-  }
-
-  dataset = dataset.filter(r => r.Segment_ID !== id);
-  expandedSnippetIds.delete(id);
-  refreshAll();
-  showStatus(supabaseClient && currentUser ? 'Segment removed from Supabase.' : 'Segment removed.', false);
-}
-
-function sevDots(n) {
-  let h = '<div class="sev-mini">';
-  for(let i=1;i<=5;i++) h += `<div class="sev-dot${i<=n?' filled':''}"></div>`;
-  return h + '</div>';
-}
-
-function toggleDatasetSnippet(id) {
-  if (expandedSnippetIds.has(id)) expandedSnippetIds.delete(id);
-  else expandedSnippetIds.add(id);
-  renderDataset();
-}
-
-async function clearAllSegments() {
-  if (!confirm('Delete ALL segments?')) return;
-
-  if (supabaseClient && currentUser) {
-    setCloudSyncing(true);
-    const { error } = await supabaseClient
-      .from(SUPABASE_TABLE)
-      .delete()
-      .eq('user_id', currentUser.id);
-    setCloudSyncing(false);
-
-    if (error) {
-      showStatus(`Could not clear Supabase history: ${error.message}`, true);
-      return;
-    }
-  }
-
-  dataset = [];
-  expandedSnippetIds.clear();
-  refreshAll();
-  showStatus(supabaseClient && currentUser ? 'All saved segments cleared from Supabase.' : 'All local segments cleared.', false);
-}
-
-function renderDashboard() {
-  if(!dataset.length) {
-    document.getElementById('dashContent').innerHTML = '<div class="no-data-msg">No data yet. Enter segments in the Data Entry tab to see the dashboard.</div>';
-    return;
-  }
-  const { indMap, domMap, cipqIndex, cipqMethod } = aggregate();
-
-  let ipClass = cipqIndex >= 4 ? 'Critical' : cipqIndex >= 3 ? 'Moderate' : 'Low';
-  let html = `
-  <div class="index-hero">
-    <div>
-      <div class="label">CIPQ Index</div>
-      <div class="big-number">${cipqIndex.toFixed(2)}</div>
-    </div>
-    <div>
-      <div class="label">Structural Pressure Level</div>
-      <div style="font-family:'Playfair Display',serif;font-size:1.6rem;font-weight:700;color:var(--gold)">${ipClass}</div>
-      <div class="desc">Average severity across all four CIPQ domains. Scale 1–5.</div>
-    </div>
-    <div style="font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:#c8bfae">
-      <div>${dataset.length} segments coded</div>
-      <div style="margin-top:0.3rem">${Object.keys(indMap).length} indicators active</div>
-      <div style="margin-top:0.3rem">${[...new Set(dataset.map(r=>r.Stakeholder).filter(Boolean))].length} stakeholder types</div>
-    </div>
-  </div>
-  <div class="method-note"><strong>How the CIPQ Index is computed:</strong> ${cipqMethod}<p>This dashboard keeps the original coded segments underneath the scores so users can move from numbers back to evidence.</p></div>
-  <div class="section-title">Pipeline Visibility <span>How qualitative evidence becomes policy signals</span></div>
-  <div class="pipeline-strip">
-    <div class="pipeline-step"><div class="step-no">Step 1</div><strong>Segments</strong><p>FGD, KII, and survey excerpts are entered as single coded segments.</p></div>
-    <div class="pipeline-step"><div class="step-no">Step 2</div><strong>Indicators</strong><p>Each segment is linked to one fixed CIPQ indicator after open coding.</p></div>
-    <div class="pipeline-step"><div class="step-no">Step 3</div><strong>Domains</strong><p>Indicators roll up into the four CIPQ domains: Creation, Production, Distribution, and Access.</p></div>
-    <div class="pipeline-step"><div class="step-no">Step 4</div><strong>Scores</strong><p>Average severity and counts are summarized into domain diagnostics and the overall CIPQ Index.</p></div>
-  </div>
-  <div class="section-title">Domain Scores <span>Average severity per quadrant</span></div>
-  <div class="domain-grid">`;
-
-  VALID_DOMAINS.forEach(d => {
-    const dm = domMap[d];
-    const score = dm ? dm.score.toFixed(2) : '—';
-    const count = dm ? dm.count : 0;
-    const pct = dm ? (dm.score / 5 * 100) : 0;
-    const dc = DOMAIN_CLASS[d];
-    const barColor = `var(--${dc})`;
-    html += `<div class="domain-card ${dc}">
-      <div class="d-label">${d}</div>
-      <div class="d-score">${score}</div>
-      <div class="d-count">${count} segments</div>
-      <div class="d-count">Variation: ${dm ? dm.variationLabel : '—'}${dm ? ` · σ ${dm.stdDev.toFixed(2)}` : ''}</div>
-      <div class="domain-bar"><div class="domain-bar-fill" style="width:${pct}%;background:${barColor}"></div></div>
-    </div>`;
-  });
-
-  html += `</div>`;
-
-  const top5 = Object.values(indMap).sort((a,b)=>b.avg-a.avg).slice(0,5);
-  html += `<div class="section-title" style="margin-top:1.5rem">Top 5 Indicators by Severity <span>Ranked</span></div><div class="table-wrap"><table><thead><tr><th>#</th><th>Indicator</th><th>Domain</th><th>Count</th><th>Avg Severity</th></tr></thead><tbody>`;
-  top5.forEach((v,i) => {
-    const dc = DOMAIN_CLASS[v.domain]||'';
-    html += `<tr><td style="font-family:'IBM Plex Mono',monospace;color:var(--muted)">${i+1}</td>
-      <td><button class="inline-link-btn" type="button" onclick="openIndicatorTrace('${v.code}','indicators')"><strong>${v.code}</strong> · ${v.name}</button></td>
-      <td><span class="tag ${dc}">${v.domain}</span></td>
-      <td style="font-family:'IBM Plex Mono',monospace">${v.count}</td>
-      <td><strong style="color:var(--rust)">${v.avg.toFixed(2)}</strong></td></tr>`;
-  });
-  html += '</tbody></table></div>';
-  document.getElementById('dashContent').innerHTML = html;
-}
-
-function renderIndicators() {
-  if(!dataset.length) { document.getElementById('indicatorContent').innerHTML = '<div class="no-data-msg">No data yet.</div>'; return; }
-  const { indMap } = aggregate();
-  const filterDomain = document.getElementById('indFilterDomain').value;
-  let items = Object.values(indMap).sort((a,b)=>b.avg-a.avg);
-  if(filterDomain) items = items.filter(v=>v.domain===filterDomain);
-
-  let html = `<div class="table-wrap"><table><thead><tr><th>Code</th><th>Indicator</th><th>Domain</th><th>Segments</th><th>Avg Severity</th><th>Severity Visual</th></tr></thead><tbody>`;
-  items.forEach(v => {
-    const dc = DOMAIN_CLASS[v.domain]||'';
-    const barPct = (v.avg/5*100).toFixed(0);
-    html += `<tr>
-      <td><code style="font-family:'IBM Plex Mono',monospace;font-weight:600">${v.code}</code></td>
-      <td><button class="inline-link-btn" type="button" onclick="openIndicatorTrace('${v.code}')">${v.name}</button></td>
-      <td><span class="tag ${dc}">${v.domain}</span></td>
-      <td style="font-family:'IBM Plex Mono',monospace;text-align:center">${v.count}</td>
-      <td style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--rust)">${v.avg.toFixed(2)}</td>
-      <td style="min-width:140px">
-        <div style="background:var(--cream);border-radius:999px;height:8px;width:120px;max-width:100%">
-          <div style="background:var(--rust);height:8px;border-radius:999px;width:${barPct}%"></div>
-        </div>
-      </td>
-    </tr>`;
-  });
-  html += '</tbody></table></div>';
-  document.getElementById('indicatorContent').innerHTML = html;
-  renderTraceability('indicatorTraceability');
-}
-
-function renderComparison() {
-  if(!dataset.length) { document.getElementById('compContent').innerHTML = '<div class="no-data-msg">No data yet.</div>'; return; }
-
-  const stakeholders = [...new Set(dataset.map(r=>r.Stakeholder).filter(Boolean))].sort();
-  const regions = [...new Set(dataset.map(r=>r.Region).filter(Boolean))].sort();
-  const indicators = [...new Set(dataset.map(r=>r.Indicator_Code))].sort();
-
-  function buildCompTable(groupKey, groups, title) {
-    if(!groups.length) return '';
-    let html = `<div class="section-title" style="font-size:1.1rem;margin-top:1.5rem">${title}</div><div class="table-wrap"><table class="comp-table"><thead><tr><th>Indicator</th>`;
-    groups.forEach(g => html += `<th style="text-align:center;font-size:0.68rem">${g}</th>`);
-    html += '</tr></thead><tbody>';
-    indicators.forEach(code => {
-      const indicatorName = dataset.find(r=>r.Indicator_Code===code)?.Indicator_Name || code;
-      html += `<tr><td><code style="font-size:0.75rem">${code}</code> ${indicatorName}</td>`;
-      groups.forEach(g => {
-        const rows = dataset.filter(r=>r.Indicator_Code===code && r[groupKey]===g);
-        if(!rows.length) { html += `<td class="comp-cell" style="color:var(--border)">—</td>`; return; }
-        const avg = rows.reduce((s,r)=>s+r.Severity,0)/rows.length;
-        const cls = avg>=4?'high':avg>=3?'mid':'low';
-        html += `<td class="comp-cell ${cls}">${avg.toFixed(1)}</td>`;
-      });
-      html += '</tr>';
-    });
-    html += '</tbody></table></div>';
-    return html;
-  }
-
-  let html = buildCompTable('Stakeholder', stakeholders, 'By Stakeholder Group');
-  html += buildCompTable('Region', regions, 'By Region');
-  document.getElementById('compContent').innerHTML = html || '<div class="no-data-msg">Not enough metadata to compare. Add Stakeholder and Region fields.</div>';
-}
-
-function renderPriority() {
-  if(!dataset.length) { document.getElementById('priorityContent').innerHTML = '<div class="no-data-msg">No data yet.</div>'; return; }
-  const { indMap } = aggregate();
-  const minSev = parseFloat(document.getElementById('minSev').value);
-  const minCnt = parseInt(document.getElementById('minCount').value);
-  const priorities = Object.values(indMap).filter(v=>v.avg>=minSev && v.count>=minCnt).sort((a,b)=>b.avg-a.avg);
-
-  if(!priorities.length) {
-    document.getElementById('priorityContent').innerHTML = '<div class="no-data-msg">No indicators meet the current thresholds. Try lowering the filters.</div>';
-    return;
-  }
-
-  let html = `<div class="table-wrap"><table><thead><tr><th>Priority</th><th>Indicator</th><th>Domain</th><th>Segments</th><th>Avg Severity</th><th>Status</th></tr></thead><tbody>`;
-  priorities.forEach((v,i) => {
-    const dc = DOMAIN_CLASS[v.domain]||'';
-    html += `<tr>
-      <td style="font-family:'Playfair Display',serif;font-size:1.3rem;font-weight:700;color:var(--muted)">${i+1}</td>
-      <td><button class="inline-link-btn" type="button" onclick="openIndicatorTrace('${v.code}','indicators')"><strong>${v.code}</strong> · ${v.name}</button></td>
-      <td><span class="tag ${dc}">${v.domain}</span></td>
-      <td style="font-family:'IBM Plex Mono',monospace">${v.count}</td>
-      <td style="font-family:'IBM Plex Mono',monospace;font-weight:700;color:var(--rust)">${v.avg.toFixed(2)}</td>
-      <td><span class="priority-badge">Priority</span></td>
-    </tr>`;
-  });
-  html += '</tbody></table></div>';
-  document.getElementById('priorityContent').innerHTML = html;
-}
-
-function renderDataset() {
-  const filterDomain = document.getElementById('dsFilterDomain').value;
-  const filterStakeholder = document.getElementById('dsFilterStakeholder').value;
-
-  const stakeholders = [...new Set(dataset.map(r=>r.Stakeholder).filter(Boolean))].sort();
-  const dsSel = document.getElementById('dsFilterStakeholder');
-  const curVal = dsSel.value;
-  dsSel.innerHTML = '<option value="">All</option>';
-  stakeholders.forEach(s => dsSel.innerHTML += `<option${s===curVal?' selected':''}>${s}</option>`);
-
-  let rows = dataset;
-  if(filterDomain) rows = rows.filter(r=>r.CIPQ_Domain===filterDomain);
-  if(filterStakeholder) rows = rows.filter(r=>r.Stakeholder===filterStakeholder);
-
-  document.getElementById('datasetCount').textContent = `${rows.length} of ${dataset.length} segments`;
-
-  if(!rows.length) {
-    document.getElementById('datasetContent').innerHTML = '<div class="no-data-msg">No segments match current filters.</div>';
-    return;
-  }
-
-  let html = `<div class="table-wrap"><table><thead><tr><th>Segment ID</th><th>Theme</th><th>Open Code</th><th>Snippet</th><th>Domain</th><th>Indicator</th><th>Severity</th><th>Stakeholder</th><th>Region</th><th>Source</th><th>Session</th><th></th></tr></thead><tbody>`;
-  rows.forEach(r => {
-    const dc = DOMAIN_CLASS[r.CIPQ_Domain]||'';
-    const isExpanded = expandedSnippetIds.has(r.Segment_ID);
-    const isLongSnippet = r.Snippet.length > 80;
-    const snip = isExpanded || !isLongSnippet ? r.Snippet : r.Snippet.slice(0,80)+'...';
-    html += `<tr>
-      <td><code style="font-size:0.72rem">${r.Segment_ID}</code></td>
-      <td style="font-size:0.8rem">${r.Theme || '—'}</td>
-      <td style="font-size:0.8rem">${r.Open_Code || '—'}</td>
-      <td style="font-size:0.82rem;max-width:${isExpanded ? '420px' : '240px'}">
-        <button class="snippet-toggle${isExpanded ? ' expanded' : ''}" type="button" onclick="toggleDatasetSnippet('${r.Segment_ID}')">
-          ${snip || '-'}
-          ${isLongSnippet ? `<span class="snippet-hint">${isExpanded ? 'Click to collapse' : 'Click to expand'}</span>` : ''}
-        </button>
-      </td>
-      <td><span class="tag ${dc}">${r.CIPQ_Domain}</span></td>
-      <td style="font-size:0.8rem"><button class="inline-link-btn" type="button" onclick="openIndicatorTrace('${r.Indicator_Code}','indicators')">${r.Indicator_Code} · ${r.Indicator_Name}</button></td>
-      <td>${sevDots(r.Severity)}</td>
-      <td style="font-size:0.8rem">${r.Stakeholder||'—'}</td>
-      <td style="font-size:0.8rem">${r.Region||'—'}</td>
-      <td style="font-size:0.75rem;color:var(--muted)">${r.Source_Type||'—'}</td>
-      <td style="font-size:0.75rem;color:var(--muted)">${r.Session_ID||'—'}</td>
-      <td><button class="btn btn-secondary" style="padding:0.45rem 0.65rem;font-size:0.65rem;min-height:36px" onclick="deleteSegment('${r.Segment_ID}')">✕</button></td>
-    </tr>`;
-  });
-  html += '</tbody></table></div>';
-  document.getElementById('datasetContent').innerHTML = html;
-}
-
-function showStatus(msg, isError) {
-  const bar = document.getElementById('statusBar');
-  bar.textContent = msg;
-  bar.className = isError ? 'error' : '';
-  bar.style.display = 'block';
-  setTimeout(() => bar.style.display = 'none', 4000);
-}
-
-function updateCounts() {
-  document.getElementById('segCount').textContent = `${dataset.length} segment${dataset.length!==1?'s':''} loaded`;
-  document.getElementById('datasetCount').textContent = `${dataset.length} segments`;
-  renderAuthUI();
-}
-
-function refreshAll() {
-  renderEntryPreview();
-  updateCounts();
-  if (document.getElementById('tab-dashboard').classList.contains('active')) renderDashboard();
-  if (document.getElementById('tab-indicators').classList.contains('active')) renderIndicators();
-  if (document.getElementById('tab-comparison').classList.contains('active')) renderComparison();
-  if (document.getElementById('tab-priority').classList.contains('active')) renderPriority();
-  if (document.getElementById('tab-dataset').classList.contains('active')) renderDataset();
-}
-
-Object.assign(window, {
-  switchTab,
-  updateIndicators,
-  setSeverity,
-  clearForm,
-  addSegment,
-  handleFileUpload,
-  exportCSV,
-  openIndicatorTrace,
-  closeIndicatorTrace,
-  deleteSegment,
-  toggleDatasetSnippet,
-  clearAllSegments,
-  signInUser,
-  signUpUser,
-  signOutUser
-});
-
-window.addEventListener('DOMContentLoaded', () => {
-  updateCounts();
-  renderEntryPreview();
-  updateUploadMeta();
-  initializeAuth();
-});
-</script>
+<script src="app.js"></script>
 </body>
 </html>
