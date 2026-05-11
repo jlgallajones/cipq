@@ -1,7 +1,7 @@
 let dataset = [];
 let currentSeverity = null;
 let activeTraceCode = null;
-let activeView = 'encoder';
+let activeView = 'client';
 
 const SEVERITY_LABELS = {
   1: 'Minimal',
@@ -16,6 +16,8 @@ const DOMAIN_PREFIX = { Creation: 'CREATE', Production: 'PROD', Distribution: 'D
 const VALID_DOMAINS = ['Creation', 'Production', 'Distribution', 'Access'];
 const LEGACY_DOMAIN_MAP = { Governance: 'Production' };
 const SCORING_CONFIDENCE_OPTIONS = ['low', 'medium', 'high'];
+const VALUE_CHAIN_STAGES = ['Development', 'Production', 'Distribution', 'Market Access'];
+const PESTLE_TAGS = ['Political', 'Economic', 'Social', 'Technological', 'Legal', 'Environmental'];
 const expandedSnippetIds = new Set();
 
 const SUPABASE_URL = 'https://ueyyrugaynzczkcwnxbt.supabase.co';
@@ -32,6 +34,7 @@ const supabaseClient = supabaseReady ? window.supabase.createClient(SUPABASE_URL
 let currentSession = null;
 let currentUser = null;
 let isCloudSyncing = false;
+const unavailableSupabaseColumns = new Set();
 
 const CODEBOOK = {
   Creation: [
@@ -291,6 +294,19 @@ function toArray(value) {
   return String(value).split(/[|,;]/).map(item => item.trim()).filter(Boolean);
 }
 
+function normalizeControlledOption(value, options) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  return options.find(option => option.toLowerCase() === raw.toLowerCase()) || raw;
+}
+
+function normalizePestleTags(value) {
+  const seen = new Set();
+  return toArray(value)
+    .map(tag => normalizeControlledOption(tag, PESTLE_TAGS))
+    .filter(tag => PESTLE_TAGS.includes(tag) && !seen.has(tag) && seen.add(tag));
+}
+
 function parseBoolean(value) {
   if (typeof value === 'boolean') return value;
   return ['true', '1', 'yes', 'y'].includes(String(value ?? '').trim().toLowerCase());
@@ -299,7 +315,7 @@ function parseBoolean(value) {
 function formatSupabaseError(error) {
   if (!error) return 'Unknown error.';
   const message = error.message || String(error);
-  if (/column|schema|record_confidence|theme_code|stakeholder_group|quadrant_primary|indicator_label/i.test(message)) {
+  if (/column|schema|record_confidence|theme_code|stakeholder_group|quadrant_primary|indicator_label|value_chain_stage|pestle_tags/i.test(message)) {
     return `${message} Run the updated SQL migration in supabase_schema.sql so the richer CIPQ fields exist before using cloud sync.`;
   }
   return message;
@@ -351,6 +367,172 @@ function ensureUniqueSegmentId(baseId, takenIds = null) {
   return candidate;
 }
 
+function normalizeDuplicateText(value) {
+  return String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function recordIdentityKey(record) {
+  if (record.DB_ID) return `db:${record.DB_ID}`;
+  return `segment:${normalizeDuplicateText(record.Segment_ID)}`;
+}
+
+function findDuplicateMatches(incomingRecord, records = dataset) {
+  const incomingSnippet = normalizeDuplicateText(incomingRecord.Snippet);
+  if (!incomingSnippet) return [];
+
+  return records.map(existingRecord => {
+    const reasons = [];
+    if (incomingSnippet === normalizeDuplicateText(existingRecord.Snippet)) {
+      reasons.push('same snippet');
+    }
+    return reasons.length ? { record: existingRecord, reasons } : null;
+  }).filter(Boolean);
+}
+
+function removeRecordReferences(records, references) {
+  if (!references.size) return records;
+  return records.filter(record => !references.has(record));
+}
+
+function planSegmentReplacements(incomingRecords) {
+  let finalDataset = [...dataset];
+  let recordsToSave = [];
+  const replacedExisting = new Map();
+  const duplicateSummaries = [];
+
+  incomingRecords.forEach(record => {
+    const matches = findDuplicateMatches(record, finalDataset);
+    if (matches.length) {
+      duplicateSummaries.push({ record, matches });
+      matches.forEach(match => {
+        if (dataset.includes(match.record)) {
+          replacedExisting.set(recordIdentityKey(match.record), match.record);
+        }
+      });
+    }
+
+    const matchedRecords = new Set(matches.map(match => match.record));
+    finalDataset = removeRecordReferences(finalDataset, matchedRecords);
+    recordsToSave = removeRecordReferences(recordsToSave, matchedRecords);
+    finalDataset.push(record);
+    recordsToSave.push(record);
+  });
+
+  return {
+    finalDataset,
+    recordsToSave,
+    replacedExisting: [...replacedExisting.values()],
+    duplicateSummaries
+  };
+}
+
+function duplicateSummaryText(duplicateSummaries) {
+  const reasonCounts = new Map();
+  duplicateSummaries.forEach(summary => {
+    summary.matches.forEach(match => {
+      match.reasons.forEach(reason => reasonCounts.set(reason, (reasonCounts.get(reason) || 0) + 1));
+    });
+  });
+  return [...reasonCounts.entries()]
+    .map(([reason, count]) => `${count} ${reason}`)
+    .join(', ');
+}
+
+function renderDuplicateDetailItem(summary, isHidden = false) {
+  const reasons = [...new Set(summary.matches.flatMap(match => match.reasons))].join(', ');
+  const snippet = summary.record.Snippet ? summary.record.Snippet.slice(0, 120) : summary.record.Segment_ID;
+  return `<li${isHidden ? ' class="is-hidden"' : ''}><strong>${escapeHtml(summary.record.Segment_ID || 'New segment')}</strong> - ${escapeHtml(reasons)}<span>${escapeHtml(snippet || '')}</span></li>`;
+}
+
+function requestOverwriteConfirmation(duplicateSummaries, sourceLabel = 'segment') {
+  if (!duplicateSummaries.length) return Promise.resolve(true);
+
+  const modal = document.getElementById('overwriteModal');
+  if (!modal) {
+    const count = duplicateSummaries.length;
+    return Promise.resolve(window.confirm(`${count} duplicate ${count === 1 ? 'record was' : 'records were'} found. Overwrite the existing and replace?`));
+  }
+
+  const title = document.getElementById('overwriteModalTitle');
+  const body = document.getElementById('overwriteModalBody');
+  const details = document.getElementById('overwriteModalDetails');
+  const viewMoreButton = document.getElementById('overwriteViewMoreBtn');
+  const confirmButton = document.getElementById('overwriteConfirmBtn');
+  const cancelButton = document.getElementById('overwriteCancelBtn');
+
+  const duplicateCount = duplicateSummaries.length;
+  const replacedCount = duplicateSummaries.reduce((total, summary) => total + summary.matches.length, 0);
+  title.textContent = duplicateCount === 1 ? 'Duplicate Segment Found' : 'Duplicate Segments Found';
+  body.textContent = `${duplicateCount} ${sourceLabel}${duplicateCount === 1 ? '' : 's'} matched ${replacedCount} existing record${replacedCount === 1 ? '' : 's'}. Overwrite the existing and replace?`;
+  details.innerHTML = duplicateSummaries
+    .map((summary, index) => renderDuplicateDetailItem(summary, index >= 4))
+    .join('');
+  if (viewMoreButton) {
+    const hiddenCount = Math.max(duplicateSummaries.length - 4, 0);
+    viewMoreButton.textContent = hiddenCount ? `View More (${hiddenCount})` : 'View More';
+    viewMoreButton.classList.toggle('show', hiddenCount > 0);
+    viewMoreButton.setAttribute('aria-expanded', 'false');
+  }
+
+  return new Promise(resolve => {
+    let settled = false;
+    const close = confirmed => {
+      if (settled) return;
+      settled = true;
+      modal.classList.remove('show');
+      modal.setAttribute('aria-hidden', 'true');
+      confirmButton.removeEventListener('click', onConfirm);
+      cancelButton.removeEventListener('click', onCancel);
+      viewMoreButton?.removeEventListener('click', onViewMore);
+      modal.removeEventListener('click', onBackdrop);
+      document.removeEventListener('keydown', onKeydown);
+      resolve(confirmed);
+    };
+    const onConfirm = () => close(true);
+    const onCancel = () => close(false);
+    const onViewMore = () => {
+      const isExpanded = viewMoreButton.getAttribute('aria-expanded') === 'true';
+      details.querySelectorAll('.is-hidden').forEach(item => {
+        item.style.display = isExpanded ? 'none' : 'block';
+      });
+      viewMoreButton.setAttribute('aria-expanded', String(!isExpanded));
+      viewMoreButton.textContent = isExpanded ? `View More (${duplicateSummaries.length - 4})` : 'View Less';
+    };
+    const onBackdrop = event => {
+      if (event.target === modal) close(false);
+    };
+    const onKeydown = event => {
+      if (event.key === 'Escape') close(false);
+    };
+
+    confirmButton.addEventListener('click', onConfirm);
+    cancelButton.addEventListener('click', onCancel);
+    viewMoreButton?.addEventListener('click', onViewMore);
+    modal.addEventListener('click', onBackdrop);
+    document.addEventListener('keydown', onKeydown);
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
+    confirmButton.focus();
+  });
+}
+
+async function deleteReplacedSegmentsFromSupabase(records) {
+  if (!records.length) return null;
+
+  const dbIds = [...new Set(records.map(record => record.DB_ID).filter(Boolean))];
+  if (dbIds.length) {
+    return supabaseClient.from(SUPABASE_TABLE).delete().in('id', dbIds);
+  }
+
+  const segmentIds = [...new Set(records.map(record => record.Segment_ID).filter(Boolean))];
+  if (!segmentIds.length) return null;
+  return supabaseClient
+    .from(SUPABASE_TABLE)
+    .delete()
+    .eq('user_id', currentUser.id)
+    .in('segment_id', segmentIds);
+}
+
 function chunkItems(items, size) {
   const chunks = [];
   for (let i = 0; i < items.length; i += size) {
@@ -369,6 +551,13 @@ function normalizeSegmentRecord(record) {
   const severityValue = parseInt(record.Severity ?? record.severity ?? record['scoring.severity'], 10);
   const scoringConfidence = String(record.Scoring_Confidence || record.Record_Confidence || record.record_confidence || record.Confidence || record['scoring.confidence'] || 'medium').toLowerCase();
   const linkedQuadrants = toArray(record.Linked_Quadrants || record.linked_quadrants || record['analysis_flags.linked_quadrants']);
+  const valueChainStage = normalizeControlledOption(
+    record.Value_Chain_Stage || record.value_chain_stage || record['context.value_chain_stage'] || record.ValueChainStage || record['Value Chain Stage'],
+    VALUE_CHAIN_STAGES
+  );
+  const pestleTags = normalizePestleTags(
+    record.PESTLE_Tags || record.pestle_tags || record['context.pestle_tags'] || record.PESTLE || record['PESTLE Tags']
+  );
   const createdAt = record.Created_At || record.created_at || record.Encoded_At || record.encoded_at || record['timestamps.encoded_at'] || new Date().toISOString();
   const updatedAt = record.Updated_At || record.updated_at || record['timestamps.updated_at'] || createdAt;
 
@@ -388,6 +577,8 @@ function normalizeSegmentRecord(record) {
     Region: record.Region || record.region || record['metadata.region'] || '',
     Source_Type: record.Source_Type || record.source_type || record.Source || record['metadata.source_type'] || '',
     Source_ID: record.Source_ID || record.source_id || record['metadata.source_id'] || '',
+    Value_Chain_Stage: VALUE_CHAIN_STAGES.includes(valueChainStage) ? valueChainStage : '',
+    PESTLE_Tags: pestleTags,
     Scoring_Confidence: SCORING_CONFIDENCE_OPTIONS.includes(scoringConfidence) ? scoringConfidence : 'medium',
     Is_Cross_Quadrant: parseBoolean(record.Is_Cross_Quadrant ?? record.is_cross_quadrant ?? record['analysis_flags.is_cross_quadrant']) || !!secondary || linkedQuadrants.length > 1,
     Linked_Quadrants: linkedQuadrants.length ? linkedQuadrants : [primary, secondary].filter(Boolean),
@@ -421,6 +612,10 @@ function toInterpretiveRecord(record) {
       region: record.Region || null,
       source_type: record.Source_Type || null,
       source_id: record.Source_ID || null
+    },
+    context: {
+      value_chain_stage: record.Value_Chain_Stage || null,
+      pestle_tags: record.PESTLE_Tags || []
     },
     scoring: {
       severity: record.Severity,
@@ -461,6 +656,8 @@ function mapSegmentToDbRow(record) {
     region: record.Region || null,
     source_type: record.Source_Type || null,
     source_id: record.Source_ID || null,
+    value_chain_stage: record.Value_Chain_Stage || null,
+    pestle_tags: record.PESTLE_Tags?.length ? record.PESTLE_Tags : null,
     record_confidence: record.Scoring_Confidence || null,
     is_cross_quadrant: !!record.Is_Cross_Quadrant,
     linked_quadrants: record.Linked_Quadrants?.length ? record.Linked_Quadrants : null,
@@ -488,6 +685,8 @@ function mapDbRowToSegment(row) {
     Region: row.region,
     Source_Type: row.source_type,
     Source_ID: row.source_id,
+    Value_Chain_Stage: row.value_chain_stage,
+    PESTLE_Tags: row.pestle_tags,
     Scoring_Confidence: row.record_confidence,
     Is_Cross_Quadrant: row.is_cross_quadrant,
     Linked_Quadrants: row.linked_quadrants,
@@ -497,6 +696,53 @@ function mapDbRowToSegment(row) {
     Created_At: row.encoded_at || row.created_at,
     Updated_At: row.updated_at || row.created_at
   });
+}
+
+function getMissingSupabaseColumn(error) {
+  const message = error?.message || '';
+  const quotedMatch = message.match(/'([a-z0-9_]+)' column/i);
+  if (quotedMatch) return quotedMatch[1];
+  const namedMatch = message.match(/column "?([a-z0-9_]+)"?/i);
+  return namedMatch ? namedMatch[1] : '';
+}
+
+function stripUnavailableSupabaseColumns(row) {
+  const cleaned = { ...row };
+  unavailableSupabaseColumns.forEach(column => {
+    delete cleaned[column];
+  });
+  return cleaned;
+}
+
+async function insertSegmentsToSupabase(records, options = {}) {
+  const isBatch = Array.isArray(records);
+  const recordList = isBatch ? records : [records];
+  let attempts = 0;
+
+  while (attempts < 20) {
+    const rows = recordList.map(record => stripUnavailableSupabaseColumns(mapSegmentToDbRow(record)));
+    let query = supabaseClient
+      .from(SUPABASE_TABLE)
+      .insert(isBatch ? rows : rows[0]);
+
+    if (options.selectSingle) query = query.select().single();
+    else if (options.select) query = query.select();
+
+    const result = await query;
+    const missingColumn = getMissingSupabaseColumn(result.error);
+    if (missingColumn && !unavailableSupabaseColumns.has(missingColumn)) {
+      unavailableSupabaseColumns.add(missingColumn);
+      attempts += 1;
+      continue;
+    }
+
+    return result;
+  }
+
+  return {
+    data: null,
+    error: { message: 'Supabase save failed after retrying without missing schema columns.' }
+  };
 }
 
 function validateRecord(record, strict = false) {
@@ -511,6 +757,11 @@ function validateRecord(record, strict = false) {
   if (!record.Region) issues.push('Missing region.');
   if (!record.Source_Type) issues.push('Missing source type.');
   if (!record.Source_ID) issues.push('Missing source ID.');
+  if (!record.Value_Chain_Stage) issues.push('Missing value chain stage.');
+  else if (!VALUE_CHAIN_STAGES.includes(record.Value_Chain_Stage)) issues.push('Value chain stage must be Development, Production, Distribution, or Market Access.');
+  if (!record.PESTLE_Tags?.length) issues.push('Missing PESTLE tag.');
+  const invalidPestleTags = (record.PESTLE_Tags || []).filter(tag => !PESTLE_TAGS.includes(tag));
+  if (invalidPestleTags.length) issues.push(`Invalid PESTLE tag: ${invalidPestleTags[0]}.`);
 
   const prefix = DOMAIN_PREFIX[record.CIPQ_Domain];
   if (record.Theme_Code && prefix && !String(record.Theme_Code).toUpperCase().startsWith(`${prefix}_`)) {
@@ -823,15 +1074,42 @@ function setSeverity(value) {
   });
 }
 
+function getMultiSelectValues(id) {
+  const node = document.getElementById(id);
+  if (!node) return [];
+  if (node.tagName === 'SELECT') return [...node.selectedOptions].map(option => option.value).filter(Boolean);
+  return [...node.querySelectorAll('input[type="checkbox"]:checked')].map(input => input.value).filter(Boolean);
+}
+
+function updatePestleSummary() {
+  const summary = document.getElementById('f_pestle_summary');
+  if (!summary) return;
+  const values = getMultiSelectValues('f_pestle_tags');
+  summary.textContent = values.length ? values.join(', ') : '-- Select --';
+}
+
+function clearMultiSelect(id) {
+  const node = document.getElementById(id);
+  if (!node) return;
+  if (node.tagName === 'SELECT') {
+    [...node.options].forEach(option => { option.selected = false; });
+    return;
+  }
+  [...node.querySelectorAll('input[type="checkbox"]')].forEach(input => { input.checked = false; });
+  node.open = false;
+}
+
 function clearForm() {
   ['f_segid', 'f_theme_label', 'f_domain', 'f_indicator_label', 'f_respondent_type', 'f_source_id', 'f_session', 'f_snippet', 'f_analysis_notes'].forEach(id => {
     const node = document.getElementById(id);
     if (node) node.value = '';
   });
-  ['f_theme_code', 'f_indicator', 'f_stakeholder', 'f_region', 'f_domain_secondary', 'f_source_type', 'f_confidence'].forEach(id => {
+  ['f_theme_code', 'f_indicator', 'f_stakeholder', 'f_region', 'f_domain_secondary', 'f_source_type', 'f_value_chain_stage', 'f_confidence'].forEach(id => {
     const node = document.getElementById(id);
     if (node) node.value = id === 'f_confidence' ? 'medium' : '';
   });
+  clearMultiSelect('f_pestle_tags');
+  updatePestleSummary();
   document.getElementById('f_indicator').innerHTML = '<option value="">-- Select Theme First --</option>';
   currentSeverity = null;
   document.getElementById('f_severity').value = '';
@@ -849,7 +1127,7 @@ async function addSegment() {
   const snippet = document.getElementById('f_snippet').value.trim();
   const severity = parseInt(document.getElementById('f_severity').value, 10);
   const segmentRecord = normalizeSegmentRecord({
-    Segment_ID: ensureUniqueSegmentId(requestedId || `SEG_${Date.now()}`),
+    Segment_ID: requestedId || ensureUniqueSegmentId(`SEG_${Date.now()}`),
     Snippet: snippet,
     Theme: theme?.label || '',
     Theme_Code: themeCode,
@@ -863,6 +1141,8 @@ async function addSegment() {
     Region: document.getElementById('f_region').value,
     Source_Type: document.getElementById('f_source_type').value,
     Source_ID: document.getElementById('f_source_id').value.trim(),
+    Value_Chain_Stage: document.getElementById('f_value_chain_stage').value,
+    PESTLE_Tags: getMultiSelectValues('f_pestle_tags'),
     Scoring_Confidence: document.getElementById('f_confidence').value,
     Is_Cross_Quadrant: !!secondaryQuadrant,
     Linked_Quadrants: [primaryQuadrant, secondaryQuadrant].filter(Boolean),
@@ -878,13 +1158,23 @@ async function addSegment() {
     return;
   }
 
+  const replacementPlan = planSegmentReplacements([segmentRecord]);
+  const shouldReplace = await requestOverwriteConfirmation(replacementPlan.duplicateSummaries, 'segment');
+  if (!shouldReplace) {
+    showStatus('Segment was not changed.', false);
+    return;
+  }
+
   if (supabaseClient && currentUser) {
     setCloudSyncing(true);
-    const { data, error } = await supabaseClient
-      .from(SUPABASE_TABLE)
-      .insert(mapSegmentToDbRow(segmentRecord))
-      .select()
-      .single();
+    const deleteResult = await deleteReplacedSegmentsFromSupabase(replacementPlan.replacedExisting);
+    if (deleteResult?.error) {
+      setCloudSyncing(false);
+      showStatus(`Could not replace existing segment: ${formatSupabaseError(deleteResult.error)}`, true);
+      return;
+    }
+
+    const { data, error } = await insertSegmentsToSupabase(segmentRecord, { selectSingle: true });
     setCloudSyncing(false);
 
     if (error) {
@@ -892,10 +1182,13 @@ async function addSegment() {
       return;
     }
 
-    dataset.push(mapDbRowToSegment(data));
+    const savedRecord = mapDbRowToSegment(data);
+    dataset = dataset
+      .filter(record => !replacementPlan.replacedExisting.includes(record))
+      .concat(savedRecord);
     showStatus(`Segment ${segmentRecord.Segment_ID} saved to Supabase. Total: ${dataset.length}`, false);
   } else {
-    dataset.push(segmentRecord);
+    dataset = replacementPlan.finalDataset;
     showStatus(`Segment ${segmentRecord.Segment_ID} added locally. Sign in to keep it after refresh.`, false);
   }
 
@@ -936,7 +1229,7 @@ function parseCSV(file) {
         if (!record.Indicator_Name) record.Indicator_Name = getIndicatorLabel(record.Indicator_Code);
         if (!record.Source_ID) record.Source_ID = row.Session_ID || row.session_id || '';
         if (!record.Segment_ID) record.Segment_ID = ensureUniqueSegmentId(`IMP_${Date.now()}_${index + 1}`, takenIds);
-        else record.Segment_ID = ensureUniqueSegmentId(record.Segment_ID, takenIds);
+        else takenIds.add(record.Segment_ID);
         if (!VALID_DOMAINS.includes(record.CIPQ_Domain) || !record.Indicator_Code || !Number.isFinite(record.Severity)) return;
         importedSegments.push(record);
       });
@@ -947,14 +1240,28 @@ function parseCSV(file) {
         return;
       }
 
+      const replacementPlan = planSegmentReplacements(importedSegments);
+      const shouldReplace = await requestOverwriteConfirmation(replacementPlan.duplicateSummaries, 'CSV segment');
+      if (!shouldReplace) {
+        showStatus('CSV import canceled. Existing segments were not changed.', false);
+        updateUploadMeta(file.name, false);
+        return;
+      }
+
       if (supabaseClient && currentUser) {
         setCloudSyncing(true);
         let saveError = null;
-        for (const batch of chunkItems(importedSegments, 200)) {
-          const result = await supabaseClient.from(SUPABASE_TABLE).insert(batch.map(mapSegmentToDbRow));
-          if (result.error) {
-            saveError = result.error;
-            break;
+        const deleteResult = await deleteReplacedSegmentsFromSupabase(replacementPlan.replacedExisting);
+        if (deleteResult?.error) {
+          saveError = deleteResult.error;
+        }
+        if (!saveError) {
+          for (const batch of chunkItems(replacementPlan.recordsToSave, 200)) {
+            const result = await insertSegmentsToSupabase(batch);
+            if (result.error) {
+              saveError = result.error;
+              break;
+            }
           }
         }
         setCloudSyncing(false);
@@ -967,12 +1274,13 @@ function parseCSV(file) {
 
         await loadSegmentsFromSupabase({ silent: true });
       } else {
-        dataset.push(...importedSegments);
+        dataset = replacementPlan.finalDataset;
       }
 
       updateUploadMeta(file.name, true);
       const syncLabel = supabaseClient && currentUser ? ' and saved to Supabase' : ' locally';
-      showStatus(`Imported ${importedSegments.length} segments from CSV${syncLabel}. Total: ${dataset.length}`, false);
+      const replaceLabel = replacementPlan.duplicateSummaries.length ? ` Replaced ${replacementPlan.duplicateSummaries.length} duplicate${replacementPlan.duplicateSummaries.length !== 1 ? 's' : ''}.` : '';
+      showStatus(`Imported ${replacementPlan.recordsToSave.length} segments from CSV${syncLabel}. Total: ${dataset.length}.${replaceLabel}`, false);
       refreshAll();
     },
     error: () => showStatus('Error parsing CSV file.', true)
@@ -1010,6 +1318,8 @@ function exportCSV() {
     Region: record.Region || '',
     Source_Type: record.Source_Type || '',
     Source_ID: record.Source_ID || '',
+    Value_Chain_Stage: record.Value_Chain_Stage || '',
+    PESTLE_Tags: (record.PESTLE_Tags || []).join('|'),
     Is_Cross_Quadrant: record.Is_Cross_Quadrant,
     Linked_Quadrants: (record.Linked_Quadrants || []).join('|'),
     Analysis_Notes: record.Analysis_Notes || '',
@@ -1427,6 +1737,78 @@ function generateChartExplanations(quadrantStats, indicatorStats, stakeholderSta
   };
 }
 
+function fillContextStats(options, stats) {
+  return options.map(option => {
+    const stat = stats.find(item => item.key === option);
+    return stat || {
+      key: option,
+      label: option,
+      frequency: 0,
+      average_severity: 0,
+      weighted_score: 0,
+      stakeholder_spread: 0,
+      regional_spread: 0,
+      source_spread: 0,
+      severity_sum: 0,
+      max_severity: 0,
+      min_severity: 0,
+      top_examples: [],
+      top_indicators: [],
+      evidence: [],
+      records: [],
+      domain: '',
+      confidence_score: 0,
+      confidence_label: 'emergent'
+    };
+  });
+}
+
+function generateContextInterpretation(kind, item) {
+  if (!item.frequency) return `No coded evidence is available yet for ${item.label}.`;
+  const topIndicators = item.top_indicators.length ? item.top_indicators.join(', ') : 'the coded indicators in this group';
+  const severityText = item.average_severity >= 4
+    ? 'a high-severity contextual pressure'
+    : item.average_severity >= 3
+      ? 'a moderate-to-high contextual pressure'
+      : 'an emerging contextual signal';
+
+  if (kind === 'value_chain') {
+    return `${item.label} records cluster around ${topIndicators}. With an average severity of ${item.average_severity.toFixed(2)}, this reads as ${severityText} supporting the core CIPQ findings.`;
+  }
+
+  return `${item.label} context appears through ${topIndicators}. With an average severity of ${item.average_severity.toFixed(2)}, this tag helps frame the macro-context around the CIPQ pressure signals.`;
+}
+
+function buildContextSummaries(records) {
+  const valueChainStats = fillContextStats(
+    VALUE_CHAIN_STAGES,
+    aggregateBy(records.filter(record => record.Value_Chain_Stage), record => record.Value_Chain_Stage, key => key)
+  );
+
+  const pestleExpandedRecords = [];
+  records.forEach(record => {
+    (record.PESTLE_Tags || []).forEach(tag => {
+      pestleExpandedRecords.push({ ...record, __pestleTag: tag });
+    });
+  });
+
+  const pestleStats = fillContextStats(
+    PESTLE_TAGS,
+    aggregateBy(pestleExpandedRecords, record => record.__pestleTag, key => key)
+  );
+
+  return {
+    value_chain: valueChainStats.map(item => ({
+      ...item,
+      interpretation: generateContextInterpretation('value_chain', item)
+    })),
+    pestle: pestleStats.map(item => ({
+      ...item,
+      interpretation: generateContextInterpretation('pestle', item)
+    }))
+  };
+}
+
 function serializeAggregateItem(item) {
   return {
     key: item.key,
@@ -1443,7 +1825,8 @@ function serializeAggregateItem(item) {
     top_examples: item.top_examples,
     top_indicators: item.top_indicators,
     confidence_score: item.confidence_score,
-    confidence_label: item.confidence_label
+    confidence_label: item.confidence_label,
+    interpretation: item.interpretation || ''
   };
 }
 
@@ -1464,11 +1847,15 @@ function buildInterpretiveExport(layer) {
     },
     quadrant_summary: layer.aggregates.quadrant_stats.map(serializeAggregateItem),
     indicator_summary: layer.aggregates.indicator_stats.map(serializeAggregateItem),
+    value_chain_pressure_mapping: layer.context_summaries.value_chain.map(serializeAggregateItem),
+    pestle_context_summary: layer.context_summaries.pestle.map(serializeAggregateItem),
     client_view: {
       top_panel: layer.dashboard_summary,
       main_charts: ['quadrant_frequency_chart', 'indicator_severity_chart', 'stakeholder_comparison_chart'],
       chart_explanations: layer.chart_explanations,
       quadrant_cards: layer.quadrant_cards,
+      value_chain_pressure_mapping: true,
+      pestle_context_summary: true,
       cross_quadrant_reading: layer.cross_quadrant_reading,
       priority_signals: layer.priority_signals,
       stakeholder_insights: layer.stakeholder_insights,
@@ -1506,6 +1893,7 @@ function buildInterpretiveLayer() {
   const stakeholderInsights = generateStakeholderInsights(dataset);
   const crossQuadrantReading = generateCrossQuadrantReading(dataset);
   const chartExplanations = generateChartExplanations(quadrantStats, indicatorStats, stakeholderStats);
+  const contextSummaries = buildContextSummaries(dataset);
   const cipqIndex = roundTo(mean(quadrantStats.map(item => item.average_severity).filter(value => value > 0)), 2);
   const structuralPressureLabel = cipqIndex >= 4 ? 'Critical' : cipqIndex >= 3 ? 'High' : cipqIndex >= 2 ? 'Moderate' : 'Emergent';
 
@@ -1526,6 +1914,7 @@ function buildInterpretiveLayer() {
     priority_signals: prioritySignals,
     stakeholder_insights: stakeholderInsights,
     cross_quadrant_reading: crossQuadrantReading,
+    context_summaries: contextSummaries,
     chart_explanations: chartExplanations,
     cipq_index: cipqIndex,
     structural_pressure_label: structuralPressureLabel
@@ -1569,6 +1958,20 @@ function downloadClientReport() {
     lines.push(`  ${signal.narrative}`);
   });
   lines.push('');
+  lines.push('Value Chain Pressure Mapping');
+  layer.context_summaries.value_chain.forEach(item => {
+    lines.push(`- ${item.label}: Frequency ${item.frequency} | Avg Severity ${roundTo(item.average_severity, 2)}`);
+    if (item.top_indicators.length) lines.push(`  Top indicators: ${item.top_indicators.join(', ')}`);
+    lines.push(`  ${item.interpretation}`);
+  });
+  lines.push('');
+  lines.push('PESTLE Context Summary');
+  layer.context_summaries.pestle.forEach(item => {
+    lines.push(`- ${item.label}: Frequency ${item.frequency} | Avg Severity ${roundTo(item.average_severity, 2)}`);
+    if (item.top_indicators.length) lines.push(`  Top indicators: ${item.top_indicators.join(', ')}`);
+    lines.push(`  ${item.interpretation}`);
+  });
+  lines.push('');
   lines.push('Stakeholder Perspectives');
   layer.stakeholder_insights.forEach(insight => {
     lines.push(`- ${insight.stakeholder}: ${insight.narrative}`);
@@ -1604,7 +2007,7 @@ function renderValidationNotice(layer) {
   const issuePreview = layer.validation.issues.slice(0, 5).map(item => `<li><strong>${escapeHtml(item.id)}</strong>: ${escapeHtml(item.issues[0])}</li>`).join('');
   return `<div class="validation-banner">
     <strong>Validation notes</strong>
-    <p>${layer.validation.issue_count} record${layer.validation.issue_count !== 1 ? 's' : ''} contain schema or codebook warnings. The client interpretation layer still renders, but you may want to review the flagged records in Encoder View.</p>
+    <p>${layer.validation.issue_count} record${layer.validation.issue_count !== 1 ? 's' : ''} contain schema or codebook warnings. The client interpretation layer still renders, but you may want to review the flagged records in Analyst View.</p>
     <ul>${issuePreview}</ul>
   </div>`;
 }
@@ -1667,6 +2070,8 @@ function renderTraceability(targetId) {
         ${secondaryTag}
         ${record.Stakeholder ? `<span class="tag">${escapeHtml(record.Stakeholder)}</span>` : ''}
         ${record.Region ? `<span class="tag">${escapeHtml(record.Region)}</span>` : ''}
+        ${record.Value_Chain_Stage ? `<span class="tag">${escapeHtml(record.Value_Chain_Stage)}</span>` : ''}
+        ${(record.PESTLE_Tags || []).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}
         ${record.Source_Type ? `<span class="tag">${escapeHtml(record.Source_Type)}</span>` : ''}
         ${record.Source_ID ? `<span class="tag">${escapeHtml(record.Source_ID)}</span>` : ''}
         ${record.Scoring_Confidence ? renderConfidencePill(record.Scoring_Confidence) : ''}
@@ -1694,6 +2099,7 @@ function renderEntryPreview() {
           <col style="width:200px">
           <col style="width:100px">
           <col style="width:90px">
+          <col style="width:120px">
           <col style="width:110px">
           <col style="width:80px">
         </colgroup>
@@ -1704,6 +2110,7 @@ function renderEntryPreview() {
             <th>Indicator</th>
             <th>Severity</th>
             <th>Stakeholder</th>
+            <th>Value Chain</th>
             <th>Source</th>
             <th></th>
           </tr>
@@ -1721,6 +2128,7 @@ function renderEntryPreview() {
       </td>
       <td>${sevDots(record.Severity)}</td>
       <td><span class="ds-cell-text">${escapeHtml(record.Stakeholder || '-')}</span></td>
+      <td><span class="ds-cell-text">${escapeHtml(record.Value_Chain_Stage || '-')}</span></td>
       <td><span class="ds-cell-text">${escapeHtml(sourceLabel || '-')}</span></td>
       <td><button class="btn btn-secondary ds-delete-btn" type="button" onclick="deleteSegment('${record.Segment_ID}')">Delete</button></td>
     </tr>`;
@@ -1807,10 +2215,29 @@ function buildComparisonTable(groupKey, groups, title) {
   return html;
 }
 
+function renderContextSummaryCards(items) {
+  return `<div class="insight-grid">${items.map(item => `
+    <article class="insight-card">
+      <div class="card-head">
+        <div>
+          <h3>${escapeHtml(item.label)}</h3>
+          <div class="meta-row">${renderConfidencePill(item.confidence_label)}</div>
+        </div>
+      </div>
+      <div class="stat-pair">
+        <div class="stat-block"><div class="label">Frequency</div><span class="value">${escapeHtml(item.frequency)}</span></div>
+        <div class="stat-block"><div class="label">Avg Severity</div><span class="value">${escapeHtml(roundTo(item.average_severity, 2).toFixed(2))}</span></div>
+      </div>
+      <div class="muted-inline" style="margin-top:0.85rem">Top indicators: ${escapeHtml(item.top_indicators.join(', ') || 'None yet')}</div>
+      <p style="margin-top:0.8rem">${escapeHtml(item.interpretation)}</p>
+    </article>
+  `).join('')}</div>`;
+}
+
 function renderDashboard() {
   const mount = document.getElementById('dashContent');
   if (!dataset.length) {
-    mount.innerHTML = '<div class="no-data-msg">No data yet. Encode or import segments in Encoder View to generate client-facing insights.</div>';
+    mount.innerHTML = '<div class="no-data-msg">No data yet. Encode or import segments in Analyst View to generate client-facing insights.</div>';
     return;
   }
 
@@ -1917,6 +2344,12 @@ function renderDashboard() {
   });
   html += '</div>';
 
+  html += `<div class="section-title">Value Chain Pressure Mapping <span>Contextual grouping for report interpretation</span></div>`;
+  html += renderContextSummaryCards(layer.context_summaries.value_chain);
+
+  html += `<div class="section-title">PESTLE Context Summary <span>Macro-context tags, not a separate scoring engine</span></div>`;
+  html += renderContextSummaryCards(layer.context_summaries.pestle);
+
   html += `<div class="section-title">Cross-Quadrant Reading <span>Inference-based, not causal overclaiming</span></div>
     <div class="reading-list">`;
   layer.cross_quadrant_reading.forEach(reading => {
@@ -1973,12 +2406,23 @@ function renderIndicators() {
     return;
   }
 
-  const layer = buildInterpretiveLayer();
   const filterDomain = document.getElementById('indFilterDomain').value;
-  let items = layer.aggregates.indicator_stats;
-  if (filterDomain) items = items.filter(item => item.domain === filterDomain);
+  const filterValueChain = document.getElementById('indFilterValueChain')?.value || '';
+  const filterPestle = document.getElementById('indFilterPestle')?.value || '';
+  let sourceRecords = dataset;
+  if (filterDomain) sourceRecords = sourceRecords.filter(record => record.CIPQ_Domain === filterDomain);
+  if (filterValueChain) sourceRecords = sourceRecords.filter(record => record.Value_Chain_Stage === filterValueChain);
+  if (filterPestle) sourceRecords = sourceRecords.filter(record => (record.PESTLE_Tags || []).includes(filterPestle));
+  const items = aggregateBy(sourceRecords, record => record.Indicator_Code, (key, sample) => sample.Indicator_Name || getIndicatorLabel(key) || key);
+  const severityExplanation = explainSeverityChart(items);
 
-  let html = `<div class="summary-shell"><h3>What this means</h3><p>${escapeHtml(layer.chart_explanations.indicator_severity_chart.text)}</p></div>
+  if (!items.length) {
+    mount.innerHTML = '<div class="no-data-msg">No indicators match the current filters.</div>';
+    renderTraceability('indicatorTraceability');
+    return;
+  }
+
+  let html = `<div class="summary-shell"><h3>What this means</h3><p>${escapeHtml(severityExplanation.text)}</p></div>
     <div class="table-wrap">
       <table>
         <thead>
@@ -2093,6 +2537,8 @@ function renderPriority() {
 function renderDataset() {
   const filterDomain = document.getElementById('dsFilterDomain').value;
   const filterStakeholder = document.getElementById('dsFilterStakeholder').value;
+  const filterValueChain = document.getElementById('dsFilterValueChain')?.value || '';
+  const filterPestle = document.getElementById('dsFilterPestle')?.value || '';
 
   const stakeholderSelect = document.getElementById('dsFilterStakeholder');
   const currentStakeholder = stakeholderSelect.value;
@@ -2105,6 +2551,8 @@ function renderDataset() {
   let rows = dataset;
   if (filterDomain) rows = rows.filter(record => record.CIPQ_Domain === filterDomain);
   if (filterStakeholder) rows = rows.filter(record => record.Stakeholder === filterStakeholder);
+  if (filterValueChain) rows = rows.filter(record => record.Value_Chain_Stage === filterValueChain);
+  if (filterPestle) rows = rows.filter(record => (record.PESTLE_Tags || []).includes(filterPestle));
 
   document.getElementById('datasetCount').textContent = `${rows.length} of ${dataset.length} segments`;
   if (!rows.length) {
@@ -2121,6 +2569,8 @@ function renderDataset() {
         <col style="width:100px">
         <col style="width:100px">
         <col style="width:110px">
+        <col style="width:130px">
+        <col style="width:150px">
         <col style="width:90px">
         <col style="width:80px">
         <col style="width:80px">
@@ -2133,6 +2583,8 @@ function renderDataset() {
           <th>Quadrant</th>
           <th>Severity</th>
           <th>Stakeholder</th>
+          <th>Value Chain</th>
+          <th>PESTLE</th>
           <th>Region</th>
           <th>Confidence</th>
           <th></th>
@@ -2170,6 +2622,8 @@ function renderDataset() {
         <span class="ds-cell-text">${escapeHtml(record.Stakeholder || '-')}</span>
         ${respondentLabel}
       </td>
+      <td><span class="ds-cell-text">${escapeHtml(record.Value_Chain_Stage || '-')}</span></td>
+      <td><span class="ds-cell-text">${escapeHtml((record.PESTLE_Tags || []).join(', ') || '-')}</span></td>
       <td><span class="ds-cell-text">${escapeHtml(record.Region || '-')}</span></td>
       <td>${renderConfidencePill(record.Scoring_Confidence || 'medium')}</td>
       <td><button class="btn btn-secondary ds-delete-btn" type="button" onclick="deleteSegment('${record.Segment_ID}')">Delete</button></td>
@@ -2211,6 +2665,7 @@ Object.assign(window, {
   switchTab,
   updateThemeSelection,
   updateIndicatorMetadata,
+  updatePestleSummary,
   setSeverity,
   clearForm,
   addSegment,
@@ -2231,6 +2686,7 @@ Object.assign(window, {
 window.addEventListener('DOMContentLoaded', () => {
   buildThemeOptions();
   updateUploadMeta();
+  updatePestleSummary();
   updateCounts();
   renderEntryPreview();
   const uploadZone = document.getElementById('uploadZone');
@@ -2245,5 +2701,5 @@ window.addEventListener('DOMContentLoaded', () => {
     if (event.dataTransfer.files[0]) parseCSV(event.dataTransfer.files[0]);
   });
   initializeAuth();
-  setAppView('encoder');
+  setAppView('client');
 });

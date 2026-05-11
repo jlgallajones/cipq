@@ -23,6 +23,8 @@ create table if not exists public.segments (
   region text,
   source_type text,
   source_id text,
+  value_chain_stage text check (value_chain_stage in ('Development', 'Production', 'Distribution', 'Market Access')),
+  pestle_tags text[] default '{}',
   record_confidence text check (record_confidence in ('low', 'medium', 'high')),
   is_cross_quadrant boolean not null default false,
   linked_quadrants text[] default '{}',
@@ -43,6 +45,8 @@ alter table public.segments
   add column if not exists stakeholder_group text,
   add column if not exists respondent_type text,
   add column if not exists source_id text,
+  add column if not exists value_chain_stage text,
+  add column if not exists pestle_tags text[] default '{}',
   add column if not exists record_confidence text,
   add column if not exists is_cross_quadrant boolean not null default false,
   add column if not exists linked_quadrants text[] default '{}',
@@ -70,6 +74,26 @@ begin
     alter table public.segments
       add constraint segments_record_confidence_check
       check (record_confidence in ('low', 'medium', 'high'));
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'segments_value_chain_stage_check'
+  ) then
+    alter table public.segments
+      add constraint segments_value_chain_stage_check
+      check (value_chain_stage in ('Development', 'Production', 'Distribution', 'Market Access'));
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'segments_pestle_tags_check'
+  ) then
+    alter table public.segments
+      add constraint segments_pestle_tags_check
+      check (pestle_tags <@ array['Political', 'Economic', 'Social', 'Technological', 'Legal', 'Environmental']::text[]);
   end if;
 end $$;
 

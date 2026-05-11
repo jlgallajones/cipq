@@ -200,6 +200,94 @@
   }
   #statusBar.error { background: var(--rust); }
 
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(26, 26, 46, 0.55);
+  }
+  .modal-backdrop.show { display: flex; }
+  .modal-card {
+    width: min(540px, 100%);
+    max-height: min(720px, 92vh);
+    overflow: auto;
+    background: var(--paper);
+    border: 1px solid var(--border);
+    border-top: 4px solid var(--rust);
+    border-radius: 12px;
+    box-shadow: 0 24px 70px rgba(26, 26, 46, 0.25);
+    padding: 1.4rem;
+  }
+  .modal-card h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(1.25rem, 4vw, 1.55rem);
+    line-height: 1.2;
+    margin-bottom: 0.65rem;
+  }
+  .modal-card p {
+    color: var(--muted);
+    font-size: 0.92rem;
+    margin-bottom: 1rem;
+  }
+  .modal-detail-list {
+    display: grid;
+    gap: 0.55rem;
+    list-style: none;
+    margin: 0 0 0.85rem;
+  }
+  .modal-detail-list li {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--cream);
+    padding: 0.75rem;
+    overflow-wrap: anywhere;
+  }
+  .modal-detail-list strong {
+    display: block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.76rem;
+    color: var(--ink);
+    margin-bottom: 0.25rem;
+  }
+  .modal-detail-list span {
+    display: block;
+    color: var(--muted);
+    font-size: 0.82rem;
+  }
+  .modal-detail-list li.is-hidden {
+    display: none;
+  }
+  .modal-view-more {
+    display: none;
+    margin: 0 0 1.2rem;
+    padding: 0;
+    min-height: auto;
+    border: none;
+    background: none;
+    color: var(--rust);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .modal-view-more.show {
+    display: inline-flex;
+  }
+  .modal-view-more:hover {
+    color: var(--ink);
+  }
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
   .auth-shell {
     background: linear-gradient(135deg, rgba(201, 153, 58, 0.12), rgba(42, 107, 110, 0.08));
     border: 1px solid var(--border);
@@ -572,6 +660,74 @@
   .form-group textarea {
     resize: vertical;
     min-height: 110px;
+  }
+  .form-group select[multiple] {
+    min-height: 140px;
+    padding: 0.55rem 0.75rem;
+  }
+  .multi-select-dropdown {
+    position: relative;
+  }
+  .multi-select-dropdown summary {
+    width: 100%;
+    min-height: 50px;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: white;
+    color: var(--ink);
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .multi-select-dropdown summary::-webkit-details-marker { display: none; }
+  .multi-select-dropdown summary::after {
+    content: '▾';
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+  .multi-select-dropdown[open] summary {
+    border-color: var(--teal);
+    box-shadow: 0 0 0 3px rgba(42, 107, 110, 0.12);
+  }
+  .multi-select-options {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 0.35rem);
+    left: 0;
+    right: 0;
+    display: grid;
+    gap: 0.15rem;
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: white;
+    box-shadow: var(--shadow);
+  }
+  .multi-select-options label {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin: 0;
+    padding: 0.45rem 0.55rem;
+    border-radius: 8px;
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 0.9rem;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .multi-select-options label:hover { background: var(--cream); }
+  .multi-select-options input {
+    width: auto;
+    min-height: 0;
+    padding: 0;
+    accent-color: var(--teal);
   }
   .form-group.full { grid-column: 1 / -1; }
 
@@ -1186,24 +1342,37 @@
 
 <section class="view-switch">
   <div class="view-toggle-group">
-    <button class="btn btn-secondary active" id="encoderViewBtn" type="button" onclick="setAppView('encoder')">Encoder View</button>
-    <button class="btn btn-secondary" id="clientViewBtn" type="button" onclick="setAppView('client')">Client View</button>
+    <button class="btn btn-secondary" id="encoderViewBtn" type="button" onclick="setAppView('encoder')">Analyst View</button>
+    <button class="btn btn-secondary active" id="clientViewBtn" type="button" onclick="setAppView('client')">Client View</button>
   </div>
-  <div class="view-switch-note">Encoder View keeps coding, editing, and source management together. Client View turns the same encoded dataset into readable summaries, policy signals, and evidence-backed interpretations.</div>
+  <div class="view-switch-note">Analyst View keeps coding, validation, and dataset management together. Client View keeps CIPQ analytics central while adding lightweight Value Chain and PESTLE context for reporting.</div>
 </section>
 
 <nav id="mainNav">
-  <button class="active" data-tab="entry" data-view="encoder" onclick="switchTab('entry', this)">01 · Encoder Entry</button>
-  <button data-tab="dashboard" data-view="client" onclick="switchTab('dashboard', this)">02 · Client Dashboard</button>
-  <button data-tab="indicators" data-view="client" onclick="switchTab('indicators', this)">03 · Indicators</button>
-  <button data-tab="comparison" data-view="client" onclick="switchTab('comparison', this)">04 · Perspectives</button>
-  <button data-tab="priority" data-view="client" onclick="switchTab('priority', this)">05 · Policy Signals</button>
-  <button data-tab="dataset" data-view="encoder" onclick="switchTab('dataset', this)">06 · Encoded Dataset</button>
+  <button data-tab="entry" data-view="encoder" onclick="switchTab('entry', this)">01 · Analyst Entry</button>
+  <button class="active" data-tab="dashboard" data-view="client" onclick="switchTab('dashboard', this)">01 · Client Dashboard</button>
+  <button data-tab="indicators" data-view="client" onclick="switchTab('indicators', this)">02 · Indicators</button>
+  <button data-tab="comparison" data-view="client" onclick="switchTab('comparison', this)">03 · Perspectives</button>
+  <button data-tab="priority" data-view="client" onclick="switchTab('priority', this)">04 · Policy Signals</button>
+  <button data-tab="dataset" data-view="encoder" onclick="switchTab('dataset', this)">02 · Encoded Dataset</button>
 </nav>
 
 <main>
 
   <div id="statusBar"></div>
+
+  <div class="modal-backdrop" id="overwriteModal" role="dialog" aria-modal="true" aria-labelledby="overwriteModalTitle" aria-hidden="true">
+    <div class="modal-card">
+      <h2 id="overwriteModalTitle">Duplicate Segment Found</h2>
+      <p id="overwriteModalBody">Overwrite the existing and replace?</p>
+      <ul class="modal-detail-list" id="overwriteModalDetails"></ul>
+      <button class="modal-view-more" id="overwriteViewMoreBtn" type="button" aria-expanded="false">View More</button>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="overwriteCancelBtn" type="button">Cancel</button>
+        <button class="btn btn-primary" id="overwriteConfirmBtn" type="button">Overwrite and Replace</button>
+      </div>
+    </div>
+  </div>
 
   <section class="auth-shell">
     <div class="auth-summary">
@@ -1234,8 +1403,8 @@
     </div>
   </section>
 
-  <div id="tab-entry" class="tab-panel active" data-view="encoder">
-    <div class="section-title">Encoder Workspace <span>Controlled coding with validation</span></div>
+  <div id="tab-entry" class="tab-panel" data-view="encoder">
+    <div class="section-title">Analyst Workspace <span>Controlled coding with validation</span></div>
 
     <div class="upload-area" id="uploadZone" onclick="document.getElementById('fileInput').click()">
       <span class="icon">CSV</span>
@@ -1336,6 +1505,30 @@
         </select>
       </div>
       <div class="form-group">
+        <label>Value Chain Stage</label>
+        <select id="f_value_chain_stage">
+          <option value="">-- Select --</option>
+          <option>Development</option>
+          <option>Production</option>
+          <option>Distribution</option>
+          <option>Access</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>PESTLE Tags</label>
+        <details id="f_pestle_tags" class="multi-select-dropdown">
+          <summary id="f_pestle_summary">-- Select --</summary>
+          <div class="multi-select-options">
+            <label><input type="checkbox" value="Political" onchange="updatePestleSummary()"> Political</label>
+            <label><input type="checkbox" value="Economic" onchange="updatePestleSummary()"> Economic</label>
+            <label><input type="checkbox" value="Social" onchange="updatePestleSummary()"> Social</label>
+            <label><input type="checkbox" value="Technological" onchange="updatePestleSummary()"> Technological</label>
+            <label><input type="checkbox" value="Legal" onchange="updatePestleSummary()"> Legal</label>
+            <label><input type="checkbox" value="Environmental" onchange="updatePestleSummary()"> Environmental</label>
+          </div>
+        </details>
+      </div>
+      <div class="form-group">
         <label>Source Type</label>
         <select id="f_source_type">
           <option value="">-- Select --</option>
@@ -1394,13 +1587,13 @@
     <div class="entry-table-wrap" id="entryPreview"></div>
   </div>
 
-  <div id="tab-dashboard" class="tab-panel" data-view="client">
+  <div id="tab-dashboard" class="tab-panel active" data-view="client">
     <div class="dashboard-actions">
       <button class="btn btn-secondary" type="button" onclick="exportInterpretiveJson()">Export Dashboard JSON</button>
       <button class="btn btn-secondary" type="button" onclick="downloadClientReport()">Download Client Report</button>
     </div>
     <div id="dashContent">
-      <div class="no-data-msg">No data yet. Encode or import segments in Encoder View to generate client-facing insights.</div>
+      <div class="no-data-msg">No data yet. Encode or import segments in Analyst View to generate client-facing insights.</div>
     </div>
   </div>
 
@@ -1415,9 +1608,27 @@
         <option>Distribution</option>
         <option>Access</option>
       </select>
+      <label>Value Chain:</label>
+      <select id="indFilterValueChain" onchange="renderIndicators()">
+        <option value="">All Stages</option>
+        <option>Development</option>
+        <option>Production</option>
+        <option>Distribution</option>
+        <option>Market Access</option>
+      </select>
+      <label>PESTLE:</label>
+      <select id="indFilterPestle" onchange="renderIndicators()">
+        <option value="">All Tags</option>
+        <option>Political</option>
+        <option>Economic</option>
+        <option>Social</option>
+        <option>Technological</option>
+        <option>Legal</option>
+        <option>Environmental</option>
+      </select>
     </div>
     <div id="indicatorContent">
-      <div class="no-data-msg">No data yet. Encode or import segments in Encoder View.</div>
+      <div class="no-data-msg">No data yet. Encode or import segments in Analyst View.</div>
     </div>
     <div id="indicatorTraceability"></div>
   </div>
@@ -1425,7 +1636,7 @@
   <div id="tab-comparison" class="tab-panel" data-view="client">
     <div class="section-title">Stakeholder Perspectives <span>Stakeholder and regional comparison</span></div>
     <div id="compContent">
-      <div class="no-data-msg">No data yet. Encode or import segments in Encoder View.</div>
+      <div class="no-data-msg">No data yet. Encode or import segments in Analyst View.</div>
     </div>
   </div>
 
@@ -1447,7 +1658,7 @@
       </select>
     </div>
     <div id="priorityContent">
-      <div class="no-data-msg">No data yet. Encode or import segments in Encoder View.</div>
+      <div class="no-data-msg">No data yet. Encode or import segments in Analyst View.</div>
     </div>
   </div>
 
@@ -1471,6 +1682,24 @@
       <label>Stakeholder:</label>
       <select id="dsFilterStakeholder" onchange="renderDataset()">
         <option value="">All</option>
+      </select>
+      <label>Value Chain:</label>
+      <select id="dsFilterValueChain" onchange="renderDataset()">
+        <option value="">All</option>
+        <option>Development</option>
+        <option>Production</option>
+        <option>Distribution</option>
+        <option>Market Access</option>
+      </select>
+      <label>PESTLE:</label>
+      <select id="dsFilterPestle" onchange="renderDataset()">
+        <option value="">All</option>
+        <option>Political</option>
+        <option>Economic</option>
+        <option>Social</option>
+        <option>Technological</option>
+        <option>Legal</option>
+        <option>Environmental</option>
       </select>
     </div>
     <div id="datasetContent">
