@@ -1116,6 +1116,195 @@
     font-size: 1.75rem;
     color: var(--ink);
   }
+  .chart-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1.4rem;
+    margin-bottom: 2.2rem;
+  }
+  .chart-panel {
+    padding: 1.25rem;
+    border: 1px solid rgba(200, 191, 174, 0.95);
+    border-radius: 12px;
+    background: white;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .chart-panel.wide {
+    grid-column: 1 / -1;
+  }
+  .chart-panel h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.05rem;
+    margin-bottom: 0.35rem;
+  }
+  .chart-note {
+    margin-bottom: 0.9rem;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .chart-help {
+    display: grid;
+    gap: 0.55rem;
+    margin: 0 0 0.95rem;
+    padding: 0.9rem 1rem;
+    background: var(--cream);
+    border: 1px solid rgba(200, 191, 174, 0.9);
+    border-radius: 10px;
+  }
+  .chart-help p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.86rem;
+    line-height: 1.55;
+  }
+  .chart-help strong {
+    color: var(--ink);
+  }
+  .chart-svg {
+    width: 100%;
+    height: auto;
+    display: block;
+    background: #fffdf8;
+    border: 1px solid rgba(200, 191, 174, 0.7);
+    border-radius: 10px;
+  }
+  .chart-svg text {
+    font-family: 'IBM Plex Sans', sans-serif;
+    fill: var(--ink);
+  }
+  .chart-svg .axis-label,
+  .chart-svg .tiny-label {
+    font-family: 'IBM Plex Mono', monospace;
+    fill: var(--muted);
+    font-size: 10px;
+    letter-spacing: 0;
+  }
+  .chart-svg .value-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    fill: var(--ink);
+  }
+  .chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.85rem;
+    margin-top: 0.75rem;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+    color: var(--muted);
+  }
+  .legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .legend-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    display: inline-block;
+  }
+  .sim-grid {
+    display: grid;
+    grid-template-columns: minmax(280px, 0.9fr) minmax(320px, 1.4fr);
+    gap: 1.4rem;
+    align-items: start;
+  }
+  .sim-panel {
+    background: white;
+    border: 1px solid rgba(200, 191, 174, 0.95);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    padding: 1.25rem;
+  }
+  .sim-panel h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.1rem;
+    margin-bottom: 0.55rem;
+  }
+  .sim-note {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--muted);
+    line-height: 1.55;
+    margin-bottom: 1rem;
+  }
+  .sim-control {
+    padding: 0.95rem 0;
+    border-top: 1px solid rgba(200, 191, 174, 0.75);
+  }
+  .sim-control:first-of-type { border-top: none; }
+  .sim-control-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: baseline;
+    margin-bottom: 0.65rem;
+  }
+  .sim-control-head strong {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .sim-control-head span {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--rust);
+  }
+  .sim-slider-row {
+    display: grid;
+    grid-template-columns: 92px 1fr 46px;
+    gap: 0.65rem;
+    align-items: center;
+    margin-top: 0.45rem;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  .sim-slider-row input[type="range"] {
+    width: 100%;
+    accent-color: var(--teal);
+  }
+  .sim-metric-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.85rem;
+    margin: 1rem 0;
+  }
+  .sim-metric {
+    padding: 0.95rem;
+    background: var(--cream);
+    border-radius: 10px;
+  }
+  .sim-metric .label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.66rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .sim-metric .value {
+    display: block;
+    margin-top: 0.35rem;
+    font-family: 'Playfair Display', serif;
+    font-size: 1.45rem;
+    color: var(--ink);
+  }
+  .sim-table {
+    min-width: 680px;
+  }
+  .sim-warning {
+    border-left: 3px solid var(--gold);
+    background: #fbf8f1;
+    padding: 0.9rem 1rem;
+    color: var(--ink);
+    line-height: 1.6;
+    margin-top: 1rem;
+  }
   .evidence-list blockquote {
     margin: 0;
     padding: 1.1rem 1.2rem;
@@ -1291,6 +1480,10 @@
     .stat-pair {
       grid-template-columns: 1fr;
     }
+
+    .sim-grid {
+      grid-template-columns: 1fr;
+    }
   }
 
   @media (max-width: 560px) {
@@ -1354,6 +1547,7 @@
   <button data-tab="indicators" data-view="client" onclick="switchTab('indicators', this)">02 · Indicators</button>
   <button data-tab="comparison" data-view="client" onclick="switchTab('comparison', this)">03 · Perspectives</button>
   <button data-tab="priority" data-view="client" onclick="switchTab('priority', this)">04 · Policy Signals</button>
+  <button data-tab="simulator" data-view="client" onclick="switchTab('simulator', this)">05 · Simulator</button>
   <button data-tab="dataset" data-view="encoder" onclick="switchTab('dataset', this)">02 · Encoded Dataset</button>
 </nav>
 
@@ -1416,9 +1610,12 @@
       </div>
       <input type="file" id="fileInput" accept=".csv" onchange="handleFileUpload(event)">
     </div>
+    <div class="actions-row">
+      <button class="btn btn-secondary" type="button" onclick="event.stopPropagation(); downloadImportTemplate()">Download Import Template</button>
+    </div>
 
     <div class="section-title" style="font-size:1.1rem; margin-top:0.5rem;">Manual Segment Entry</div>
-    <div class="form-note">This form uses the controlled CIPQ codebook. Primary quadrant is inferred from the selected theme code, and indicator choices are constrained to the selected theme.</div>
+    <div class="form-note">This form uses the controlled CIPQ codebook. Primary quadrant is inferred from the selected theme code, and indicator choices are constrained to the selected theme. Value Chain and PESTLE are optional context fields for reporting.</div>
     <div class="form-grid">
       <div class="form-group">
         <label>Segment ID</label>
@@ -1505,19 +1702,19 @@
         </select>
       </div>
       <div class="form-group">
-        <label>Value Chain Stage</label>
+        <label>Value Chain Stage (Optional)</label>
         <select id="f_value_chain_stage">
-          <option value="">-- Select --</option>
-          <option>Development</option>
+          <option value="">-- Optional --</option>
+          <option>Creation</option>
           <option>Production</option>
           <option>Distribution</option>
           <option>Access</option>
         </select>
       </div>
       <div class="form-group">
-        <label>PESTLE Tags</label>
+        <label>PESTLE Tags (Optional)</label>
         <details id="f_pestle_tags" class="multi-select-dropdown">
-          <summary id="f_pestle_summary">-- Select --</summary>
+          <summary id="f_pestle_summary">-- Optional --</summary>
           <div class="multi-select-options">
             <label><input type="checkbox" value="Political" onchange="updatePestleSummary()"> Political</label>
             <label><input type="checkbox" value="Economic" onchange="updatePestleSummary()"> Economic</label>
@@ -1590,7 +1787,10 @@
   <div id="tab-dashboard" class="tab-panel active" data-view="client">
     <div class="dashboard-actions">
       <button class="btn btn-secondary" type="button" onclick="exportInterpretiveJson()">Export Dashboard JSON</button>
-      <button class="btn btn-secondary" type="button" onclick="downloadClientReport()">Download Client Report</button>
+      <button class="btn btn-secondary" type="button" onclick="exportSummaryTablesCsv()">Export Summary Tables</button>
+      <button class="btn btn-secondary" type="button" onclick="downloadChartPack()">Download Chart Pack</button>
+      <button class="btn btn-secondary" type="button" onclick="downloadClientReport()">Download Word Report</button>
+      <button class="btn btn-secondary" type="button" onclick="copyClientReport()">Copy Report Text</button>
     </div>
     <div id="dashContent">
       <div class="no-data-msg">No data yet. Encode or import segments in Analyst View to generate client-facing insights.</div>
@@ -1662,10 +1862,22 @@
     </div>
   </div>
 
+  <div id="tab-simulator" class="tab-panel" data-view="client">
+    <div class="section-title">Predictive Scenario Simulator <span>Heuristic equilibrium modeling for pressure redistribution and policy consequence discussion</span></div>
+    <div class="dashboard-actions">
+      <button class="btn btn-secondary" type="button" onclick="resetSimulation()">Reset Scenario</button>
+      <button class="btn btn-secondary" type="button" onclick="downloadSimulationReport()">Download Scenario Report</button>
+    </div>
+    <div id="simulatorContent">
+      <div class="no-data-msg">No data yet. Encode or import segments first, then run scenario simulations.</div>
+    </div>
+  </div>
+
   <div id="tab-dataset" class="tab-panel" data-view="encoder">
     <div class="section-title">Encoded Dataset <span>Validation-ready record view</span></div>
     <div class="actions-row">
       <button class="btn btn-secondary" type="button" onclick="exportCSV()">Export CSV</button>
+      <button class="btn btn-secondary" type="button" onclick="exportSummaryTablesCsv()">Export Summary Tables</button>
       <button class="btn btn-secondary" type="button" onclick="exportInterpretiveJson()">Export JSON</button>
       <button class="btn btn-secondary" type="button" onclick="if(confirm('Delete all segments?')) { clearAllSegments(); }">Clear All</button>
       <span class="count-badge" id="datasetCount">0 segments</span>

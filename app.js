@@ -13,12 +13,44 @@ const SEVERITY_LABELS = {
 
 const DOMAIN_CLASS = { Creation: 'creation', Production: 'production', Distribution: 'distribution', Access: 'access' };
 const DOMAIN_PREFIX = { Creation: 'CREATE', Production: 'PROD', Distribution: 'DIST', Access: 'ACCESS' };
+const DOMAIN_COLORS = { Creation: '#8b4f9e', Production: '#c94a2e', Distribution: '#2a6b6e', Access: '#3a7a3a', Unspecified: '#7a7065' };
+const CHART_COLORS = {
+  ink: '#1a1a2e',
+  muted: '#7a7065',
+  border: '#c8bfae',
+  paper: '#fffdf8',
+  cream: '#ede8dc',
+  rust: '#c94a2e',
+  gold: '#c8993a',
+  teal: '#2a6b6e'
+};
 const VALID_DOMAINS = ['Creation', 'Production', 'Distribution', 'Access'];
+const DOMAIN_TO_VALUE_CHAIN_STAGE = {
+  Creation: 'Development',
+  Production: 'Production',
+  Distribution: 'Distribution',
+  Access: 'Market Access'
+};
+const SIMULATION_DEPENDENCY_MATRIX = {
+  Creation: { Production: 0.45, Distribution: 0.2, Access: 0.2, Creation: 0.15 },
+  Production: { Distribution: 0.45, Access: 0.3, Creation: 0.15, Production: 0.1 },
+  Distribution: { Access: 0.5, Production: 0.2, Creation: 0.15, Distribution: 0.15 },
+  Access: { Creation: 0.3, Distribution: 0.25, Production: 0.2, Access: 0.25 }
+};
+const DEFAULT_SIMULATION_STATE = {
+  relief: { Creation: 0, Production: 0, Distribution: 0, Access: 0 },
+  shock: { Creation: 0, Production: 0, Distribution: 0, Access: 0 },
+  redistribution: 35,
+  balancing: 20,
+  rounds: 3
+};
 const LEGACY_DOMAIN_MAP = { Governance: 'Production' };
 const SCORING_CONFIDENCE_OPTIONS = ['low', 'medium', 'high'];
 const VALUE_CHAIN_STAGES = ['Development', 'Production', 'Distribution', 'Market Access'];
+const VALUE_CHAIN_ALIASES = { Access: 'Market Access', Market: 'Market Access' };
 const PESTLE_TAGS = ['Political', 'Economic', 'Social', 'Technological', 'Legal', 'Environmental'];
 const expandedSnippetIds = new Set();
+let simulationState = JSON.parse(JSON.stringify(DEFAULT_SIMULATION_STATE));
 
 const SUPABASE_URL = 'https://ueyyrugaynzczkcwnxbt.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVleXlydWdheW56Y3prY3dueGJ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5NDEyOTIsImV4cCI6MjA5MjUxNzI5Mn0.x1XqiUs52OH4TKe070OSOK4c0gSGeYRSZJ30XZSBSuQ';
@@ -300,6 +332,15 @@ function normalizeControlledOption(value, options) {
   return options.find(option => option.toLowerCase() === raw.toLowerCase()) || raw;
 }
 
+function normalizeValueChainStage(value) {
+  const normalized = normalizeControlledOption(value, VALUE_CHAIN_STAGES);
+  return VALUE_CHAIN_ALIASES[normalized] || normalized;
+}
+
+function valueChainStageForAnalysis(record) {
+  return record.Value_Chain_Stage || DOMAIN_TO_VALUE_CHAIN_STAGE[record.CIPQ_Domain] || '';
+}
+
 function normalizePestleTags(value) {
   const seen = new Set();
   return toArray(value)
@@ -315,6 +356,9 @@ function parseBoolean(value) {
 function formatSupabaseError(error) {
   if (!error) return 'Unknown error.';
   const message = error.message || String(error);
+  if (/failed to fetch|networkerror|network request failed|name_not_resolved|err_name_not_resolved|load failed/i.test(message)) {
+    return 'Could not reach Supabase. Check your internet connection, DNS/VPN/firewall settings, or confirm that the Supabase project URL is active: ueyyrugaynzczkcwnxbt.supabase.co. You can still work locally and export your data.';
+  }
   if (/column|schema|record_confidence|theme_code|stakeholder_group|quadrant_primary|indicator_label|value_chain_stage|pestle_tags/i.test(message)) {
     return `${message} Run the updated SQL migration in supabase_schema.sql so the richer CIPQ fields exist before using cloud sync.`;
   }
@@ -551,9 +595,8 @@ function normalizeSegmentRecord(record) {
   const severityValue = parseInt(record.Severity ?? record.severity ?? record['scoring.severity'], 10);
   const scoringConfidence = String(record.Scoring_Confidence || record.Record_Confidence || record.record_confidence || record.Confidence || record['scoring.confidence'] || 'medium').toLowerCase();
   const linkedQuadrants = toArray(record.Linked_Quadrants || record.linked_quadrants || record['analysis_flags.linked_quadrants']);
-  const valueChainStage = normalizeControlledOption(
+  const valueChainStage = normalizeValueChainStage(
     record.Value_Chain_Stage || record.value_chain_stage || record['context.value_chain_stage'] || record.ValueChainStage || record['Value Chain Stage'],
-    VALUE_CHAIN_STAGES
   );
   const pestleTags = normalizePestleTags(
     record.PESTLE_Tags || record.pestle_tags || record['context.pestle_tags'] || record.PESTLE || record['PESTLE Tags']
@@ -584,7 +627,7 @@ function normalizeSegmentRecord(record) {
     Linked_Quadrants: linkedQuadrants.length ? linkedQuadrants : [primary, secondary].filter(Boolean),
     Analysis_Notes: record.Analysis_Notes || record.analysis_notes || record['analysis_flags.notes'] || '',
     Session_ID: record.Session_ID || record.session_id || '',
-    DB_ID: record.DB_ID || record.id || null,
+    DB_ID: record.DB_ID || record.db_id || null,
     Created_At: createdAt,
     Updated_At: updatedAt
   };
@@ -757,9 +800,7 @@ function validateRecord(record, strict = false) {
   if (!record.Region) issues.push('Missing region.');
   if (!record.Source_Type) issues.push('Missing source type.');
   if (!record.Source_ID) issues.push('Missing source ID.');
-  if (!record.Value_Chain_Stage) issues.push('Missing value chain stage.');
-  else if (!VALUE_CHAIN_STAGES.includes(record.Value_Chain_Stage)) issues.push('Value chain stage must be Development, Production, Distribution, or Market Access.');
-  if (!record.PESTLE_Tags?.length) issues.push('Missing PESTLE tag.');
+  if (record.Value_Chain_Stage && !VALUE_CHAIN_STAGES.includes(record.Value_Chain_Stage)) issues.push('Value chain stage must be Development, Production, Distribution, or Market Access.');
   const invalidPestleTags = (record.PESTLE_Tags || []).filter(tag => !PESTLE_TAGS.includes(tag));
   if (invalidPestleTags.length) issues.push(`Invalid PESTLE tag: ${invalidPestleTags[0]}.`);
 
@@ -903,12 +944,20 @@ async function loadSegmentsFromSupabase(options = {}) {
   }
 
   setCloudSyncing(true);
-  const { data, error } = await supabaseClient
-    .from(SUPABASE_TABLE)
-    .select('*')
-    .order('created_at', { ascending: true, nullsFirst: true })
-    .order('encoded_at', { ascending: true, nullsFirst: true })
-    .order('segment_id', { ascending: true });
+  let data = null;
+  let error = null;
+  try {
+    const result = await supabaseClient
+      .from(SUPABASE_TABLE)
+      .select('*')
+      .order('created_at', { ascending: true, nullsFirst: true })
+      .order('encoded_at', { ascending: true, nullsFirst: true })
+      .order('segment_id', { ascending: true });
+    data = result.data;
+    error = result.error;
+  } catch (fetchError) {
+    error = fetchError;
+  }
 
   if (error) {
     setCloudSyncing(false);
@@ -944,16 +993,28 @@ async function initializeAuth() {
   renderAuthUI();
   if (!supabaseClient) return;
 
-  const { data, error } = await supabaseClient.auth.getSession();
+  let data = null;
+  let error = null;
+  try {
+    const result = await supabaseClient.auth.getSession();
+    data = result.data;
+    error = result.error;
+  } catch (fetchError) {
+    error = fetchError;
+  }
   if (error) {
     showStatus(`Could not restore session: ${formatSupabaseError(error)}`, true);
     return;
   }
 
   await handleSessionChange(data?.session || null, { silent: true });
-  supabaseClient.auth.onAuthStateChange((event, session) => {
-    handleSessionChange(session, { silent: event === 'INITIAL_SESSION' });
-  });
+  try {
+    supabaseClient.auth.onAuthStateChange((event, session) => {
+      handleSessionChange(session, { silent: event === 'INITIAL_SESSION' });
+    });
+  } catch (fetchError) {
+    showStatus(`Could not start Supabase auth listener: ${formatSupabaseError(fetchError)}`, true);
+  }
 }
 
 async function signUpUser() {
@@ -968,7 +1029,15 @@ async function signUpUser() {
   }
 
   setCloudSyncing(true);
-  const { data, error } = await supabaseClient.auth.signUp({ email, password });
+  let data = null;
+  let error = null;
+  try {
+    const result = await supabaseClient.auth.signUp({ email, password });
+    data = result.data;
+    error = result.error;
+  } catch (fetchError) {
+    error = fetchError;
+  }
   setCloudSyncing(false);
   if (error) {
     showStatus(formatSupabaseError(error), true);
@@ -998,7 +1067,15 @@ async function signInUser() {
   }
 
   setCloudSyncing(true);
-  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  let data = null;
+  let error = null;
+  try {
+    const result = await supabaseClient.auth.signInWithPassword({ email, password });
+    data = result.data;
+    error = result.error;
+  } catch (fetchError) {
+    error = fetchError;
+  }
   setCloudSyncing(false);
   if (error) {
     showStatus(formatSupabaseError(error), true);
@@ -1014,7 +1091,13 @@ async function signOutUser() {
   if (!supabaseClient || !currentUser) return;
 
   setCloudSyncing(true);
-  const { error } = await supabaseClient.auth.signOut();
+  let error = null;
+  try {
+    const result = await supabaseClient.auth.signOut();
+    error = result.error;
+  } catch (fetchError) {
+    error = fetchError;
+  }
   setCloudSyncing(false);
   if (error) {
     showStatus(formatSupabaseError(error), true);
@@ -1062,6 +1145,7 @@ function switchTab(name, btn = null) {
   if (name === 'indicators') renderIndicators();
   if (name === 'comparison') renderComparison();
   if (name === 'priority') renderPriority();
+  if (name === 'simulator') renderSimulator();
   if (name === 'dataset') renderDataset();
   if (name === 'entry') renderEntryPreview();
 }
@@ -1085,7 +1169,7 @@ function updatePestleSummary() {
   const summary = document.getElementById('f_pestle_summary');
   if (!summary) return;
   const values = getMultiSelectValues('f_pestle_tags');
-  summary.textContent = values.length ? values.join(', ') : '-- Select --';
+  summary.textContent = values.length ? values.join(', ') : '-- Optional --';
 }
 
 function clearMultiSelect(id) {
@@ -1328,6 +1412,538 @@ function exportCSV() {
     Updated_At: record.Updated_At || ''
   })));
   downloadBlob(`CIPQ_Dataset_${new Date().toISOString().slice(0, 10)}.csv`, csv, 'text/csv;charset=utf-8');
+}
+
+function reportDateStamp() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function aggregateToSummaryRow(section, item, extra = {}) {
+  return {
+    Section: section,
+    Key: item.key || item.quadrant || item.indicator || item.label || '',
+    Label: item.label || item.quadrant || item.indicator || item.key || '',
+    Frequency: item.frequency ?? '',
+    Average_Severity: Number.isFinite(item.average_severity) ? roundTo(item.average_severity, 2) : '',
+    Weighted_Score: Number.isFinite(item.weighted_score) ? roundTo(item.weighted_score, 2) : '',
+    Stakeholder_Spread: item.stakeholder_spread ?? '',
+    Regional_Spread: item.regional_spread ?? '',
+    Source_Spread: item.source_spread ?? '',
+    Severity_Sum: item.severity_sum ?? '',
+    Max_Severity: item.max_severity ?? '',
+    Min_Severity: item.min_severity ?? '',
+    Confidence: item.confidence_label || '',
+    Top_Indicators: (item.top_indicators || []).join(' | '),
+    Notes: item.interpretation || item.summary_text || item.narrative || '',
+    ...extra
+  };
+}
+
+function buildSummaryTableRows(layer) {
+  const sourceTypeCounts = mostCommon(dataset.map(record => record.Source_Type || 'Unspecified'), 20);
+  const optionalValueChainCount = dataset.filter(record => record.Value_Chain_Stage).length;
+  const valueChainAnalysisCount = dataset.filter(record => valueChainStageForAnalysis(record)).length;
+  const optionalPestleCount = dataset.filter(record => record.PESTLE_Tags?.length).length;
+  const severityValues = dataset.map(record => record.Severity).filter(Number.isFinite);
+  const rows = [
+    {
+      Section: 'Dataset Overview',
+      Key: 'total_segments',
+      Label: 'Total coded segments',
+      Frequency: dataset.length,
+      Average_Severity: roundTo(mean(severityValues), 2),
+      Weighted_Score: '',
+      Stakeholder_Spread: countDistinct(dataset.map(record => record.Stakeholder)),
+      Regional_Spread: countDistinct(dataset.map(record => record.Region)),
+      Source_Spread: countDistinct(dataset.map(record => record.Source_Type)),
+      Severity_Sum: sum(severityValues),
+      Max_Severity: severityValues.length ? Math.max(...severityValues) : '',
+      Min_Severity: severityValues.length ? Math.min(...severityValues) : '',
+      Confidence: layer.structural_pressure_label,
+      Top_Indicators: layer.priority_signals.slice(0, 5).map(signal => signal.indicator).join(' | '),
+      Notes: `Active indicators: ${layer.aggregates.indicator_stats.length}; value chain analyzed: ${valueChainAnalysisCount}; explicit value chain tagged: ${optionalValueChainCount}; PESTLE tagged: ${optionalPestleCount}`
+    },
+    ...sourceTypeCounts.map(item => ({
+      Section: 'Source Type Totals',
+      Key: item.label,
+      Label: item.label,
+      Frequency: item.count,
+      Average_Severity: '',
+      Weighted_Score: '',
+      Stakeholder_Spread: '',
+      Regional_Spread: '',
+      Source_Spread: '',
+      Severity_Sum: '',
+      Max_Severity: '',
+      Min_Severity: '',
+      Confidence: '',
+      Top_Indicators: '',
+      Notes: ''
+    })),
+    ...layer.aggregates.quadrant_stats.map(item => aggregateToSummaryRow('Quadrant Summary', item)),
+    ...layer.aggregates.indicator_stats.map(item => aggregateToSummaryRow('Indicator Summary', item)),
+    ...layer.aggregates.stakeholder_stats.map(item => aggregateToSummaryRow('Stakeholder Summary', item)),
+    ...layer.aggregates.region_stats.map(item => aggregateToSummaryRow('Region Summary', item)),
+    ...layer.aggregates.source_stats.map(item => aggregateToSummaryRow('Source Summary', item)),
+    ...layer.context_summaries.value_chain.map(item => aggregateToSummaryRow('Value Chain Summary', item)),
+    ...layer.context_summaries.pestle.map(item => aggregateToSummaryRow('PESTLE Summary', item)),
+    ...layer.priority_signals.map(signal => aggregateToSummaryRow('Priority Signal', signal, {
+      Key: signal.indicator_code,
+      Label: signal.indicator,
+      Notes: `${signal.classification}: ${signal.narrative}`
+    })),
+    {
+      Section: 'Chart Explanation',
+      Key: 'quadrant_frequency_chart',
+      Label: 'Quadrant Frequency',
+      Frequency: '',
+      Average_Severity: '',
+      Weighted_Score: '',
+      Stakeholder_Spread: '',
+      Regional_Spread: '',
+      Source_Spread: '',
+      Severity_Sum: '',
+      Max_Severity: '',
+      Min_Severity: '',
+      Confidence: layer.chart_explanations.quadrant_frequency_chart.confidence_label,
+      Top_Indicators: '',
+      Notes: layer.chart_explanations.quadrant_frequency_chart.text
+    },
+    {
+      Section: 'Chart Explanation',
+      Key: 'indicator_severity_chart',
+      Label: 'Indicator Severity',
+      Frequency: '',
+      Average_Severity: '',
+      Weighted_Score: '',
+      Stakeholder_Spread: '',
+      Regional_Spread: '',
+      Source_Spread: '',
+      Severity_Sum: '',
+      Max_Severity: '',
+      Min_Severity: '',
+      Confidence: layer.chart_explanations.indicator_severity_chart.confidence_label,
+      Top_Indicators: '',
+      Notes: layer.chart_explanations.indicator_severity_chart.text
+    },
+    {
+      Section: 'Chart Explanation',
+      Key: 'stakeholder_comparison_chart',
+      Label: 'Stakeholder Comparison',
+      Frequency: '',
+      Average_Severity: '',
+      Weighted_Score: '',
+      Stakeholder_Spread: '',
+      Regional_Spread: '',
+      Source_Spread: '',
+      Severity_Sum: '',
+      Max_Severity: '',
+      Min_Severity: '',
+      Confidence: layer.chart_explanations.stakeholder_comparison_chart.confidence_label,
+      Top_Indicators: '',
+      Notes: layer.chart_explanations.stakeholder_comparison_chart.text
+    }
+  ];
+
+  return rows;
+}
+
+function exportSummaryTablesCsv() {
+  const layer = buildInterpretiveLayer();
+  if (!layer) {
+    showStatus('No data to export yet.', true);
+    return;
+  }
+
+  const csv = Papa.unparse(buildSummaryTableRows(layer));
+  downloadBlob(`CIPQ_Summary_Tables_${reportDateStamp()}.csv`, csv, 'text/csv;charset=utf-8');
+}
+
+function downloadImportTemplate() {
+  const fields = [
+    'Segment_ID',
+    'Snippet',
+    'Theme_Code',
+    'Indicator_Code',
+    'Severity',
+    'Stakeholder',
+    'Respondent_Type',
+    'Region',
+    'Source_Type',
+    'Source_ID',
+    'Session_ID',
+    'Value_Chain_Stage',
+    'PESTLE_Tags',
+    'Secondary_Domain',
+    'Scoring_Confidence',
+    'Analysis_Notes'
+  ];
+  const csv = Papa.unparse({ fields, data: [] });
+  downloadBlob(`CIPQ_Import_Template_${reportDateStamp()}.csv`, csv, 'text/csv;charset=utf-8');
+}
+
+function chartNumber(value, digits = 1) {
+  if (!Number.isFinite(value)) return '0';
+  return Number.isInteger(value) ? String(value) : String(roundTo(value, digits));
+}
+
+function recordCountLabel(count) {
+  return `${count} record${count === 1 ? '' : 's'}`;
+}
+
+function truncateLabel(value, maxLength = 32) {
+  const text = String(value || 'Unspecified');
+  return text.length > maxLength ? `${text.slice(0, maxLength - 3)}...` : text;
+}
+
+function domainColor(domain) {
+  return DOMAIN_COLORS[domain] || DOMAIN_COLORS.Unspecified;
+}
+
+function heatColor(value, maxValue) {
+  if (!maxValue) return '#f5f0e8';
+  const ratio = Math.max(0.12, Math.min(1, value / maxValue));
+  const start = { r: 245, g: 240, b: 232 };
+  const end = { r: 201, g: 74, b: 46 };
+  const r = Math.round(start.r + (end.r - start.r) * ratio);
+  const g = Math.round(start.g + (end.g - start.g) * ratio);
+  const b = Math.round(start.b + (end.b - start.b) * ratio);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+function chartLegend(items) {
+  return `<div class="chart-legend">${items.map(item => `
+    <span class="legend-item"><span class="legend-swatch" style="background:${escapeHtml(item.color)}"></span>${escapeHtml(item.label)}</span>
+  `).join('')}</div>`;
+}
+
+function chartHelp(reading, meaning) {
+  if (!reading && !meaning) return '';
+  return `<div class="chart-help">
+    ${reading ? `<p><strong>How to read this:</strong> ${escapeHtml(reading)}</p>` : ''}
+    ${meaning ? `<p><strong>What it means:</strong> ${escapeHtml(meaning)}</p>` : ''}
+  </div>`;
+}
+
+function panel(title, note, chartHtml, className = '', reading = '', meaning = '') {
+  return `<section class="chart-panel ${escapeHtml(className)}">
+    <h3>${escapeHtml(title)}</h3>
+    <div class="chart-note">${escapeHtml(note)}</div>
+    ${chartHelp(reading, meaning)}
+    ${chartHtml}
+  </section>`;
+}
+
+function chartGuidance(layer) {
+  const topQuadrant = layer.aggregates.quadrant_stats[0];
+  const topStakeholder = layer.aggregates.stakeholder_stats[0];
+  const topSignal = layer.priority_signals[0];
+  const topValueChain = [...layer.context_summaries.value_chain].sort((a, b) => b.frequency - a.frequency || b.average_severity - a.average_severity)[0];
+  const topPestle = [...layer.context_summaries.pestle].sort((a, b) => b.frequency - a.frequency || b.average_severity - a.average_severity)[0];
+  const criticalLocalized = layer.aggregates.indicator_stats.find(item => item.frequency <= 2 && item.average_severity >= 4);
+  const widespread = layer.aggregates.indicator_stats.find(item => item.frequency >= 3);
+
+  return {
+    quadrant: {
+      read: 'Long colored bars show weighted severity, which combines frequency and seriousness. The smaller gold bars show raw frequency only.',
+      meaning: topQuadrant
+        ? `${topQuadrant.label} currently carries the strongest quadrant-level pressure, with ${topQuadrant.frequency} coded segment${topQuadrant.frequency !== 1 ? 's' : ''} and an average severity of ${chartNumber(topQuadrant.average_severity, 2)}.`
+        : 'No quadrant pattern is available yet.'
+    },
+    stakeholder: {
+      read: 'Each row shows a stakeholder group, its dominant CIPQ domain, average severity, and number of coded records.',
+      meaning: topStakeholder
+        ? `${topStakeholder.label} contributes the largest stakeholder cluster in the current dataset, so its dominant domain should be read as an important stakeholder-specific pressure signal.`
+        : 'Stakeholder comparison needs stakeholder metadata in the encoded records.'
+    },
+    heatmap: {
+      read: 'Darker cells and longer bars indicate higher weighted severity. Weighted severity rises when an indicator is both frequent and severe.',
+      meaning: topSignal
+        ? `${topSignal.indicator} is the highest-ranked priority signal, combining frequency ${topSignal.frequency} with average severity ${chartNumber(topSignal.average_severity, 2)}.`
+        : 'No priority signal is available yet.'
+    },
+    valueChain: {
+      read: 'The larger blocks mark stages where more coded pressures accumulate. The value printed inside each block is the record count. If a record has no explicit Value Chain Stage, the chart infers one from its CIPQ domain.',
+      meaning: topValueChain?.frequency
+        ? `${topValueChain.label} has the strongest value-chain accumulation, helping locate where policy discussion may need to focus operational attention.`
+        : 'No value-chain pattern is available yet.'
+    },
+    pestle: {
+      read: 'Bars count how often each PESTLE tag appears. Average severity beside each bar shows whether that context is mild, moderate, or urgent.',
+      meaning: topPestle?.frequency
+        ? `${topPestle.label} is the most common PESTLE context in the tagged records, framing the macro-level setting around the core CIPQ findings.`
+        : 'PESTLE is optional, so this view remains empty until records are tagged.'
+    },
+    scatter: {
+      read: 'Points farther right are more widespread. Points higher up are more severe. Upper-right points are broad and serious; upper-left points are serious but localized.',
+      meaning: criticalLocalized
+        ? `${criticalLocalized.label} appears as a critical localized pressure, while ${widespread?.label || 'the more frequent indicators'} show wider recurrence across the dataset.`
+        : widespread
+          ? `${widespread.label} is a more widespread pressure; the scatterplot helps compare it against less frequent but potentially severe issues.`
+          : 'The scatterplot will become more useful as more indicators accumulate repeated records.'
+    }
+  };
+}
+
+function renderQuadrantDistributionChart(layer) {
+  const guidance = chartGuidance(layer).quadrant;
+  const stats = VALID_DOMAINS.map(domain => {
+    const stat = layer.aggregates.quadrant_stats.find(item => item.key === domain);
+    return stat || {
+      key: domain,
+      label: domain,
+      frequency: 0,
+      weighted_score: 0,
+      average_severity: 0
+    };
+  });
+  const maxWeighted = Math.max(...stats.map(item => item.weighted_score), 1);
+  const maxFrequency = Math.max(...stats.map(item => item.frequency), 1);
+  const rowHeight = 62;
+  const height = 60 + stats.length * rowHeight;
+  let svg = `<svg class="chart-svg" role="img" aria-label="Quadrant distribution chart" viewBox="0 0 720 ${height}">
+    <rect width="720" height="${height}" fill="${CHART_COLORS.paper}"/>
+    <text x="148" y="28" class="axis-label">weighted severity</text>
+    <text x="570" y="28" class="axis-label">frequency</text>`;
+  stats.forEach((item, index) => {
+    const y = 52 + index * rowHeight;
+    const weightedWidth = Math.round((item.weighted_score / maxWeighted) * 360);
+    const frequencyWidth = Math.round((item.frequency / maxFrequency) * 110);
+    svg += `
+      <text x="24" y="${y + 19}" font-size="14" font-weight="700">${escapeHtml(item.label)}</text>
+      <rect x="148" y="${y}" width="360" height="24" rx="4" fill="${CHART_COLORS.cream}"/>
+      <rect x="148" y="${y}" width="${weightedWidth}" height="24" rx="4" fill="${domainColor(item.key)}"/>
+      <rect x="570" y="${y + 4}" width="110" height="16" rx="3" fill="${CHART_COLORS.cream}"/>
+      <rect x="570" y="${y + 4}" width="${frequencyWidth}" height="16" rx="3" fill="${CHART_COLORS.gold}"/>
+      <text x="520" y="${y + 18}" class="value-label">${escapeHtml(chartNumber(item.weighted_score, 1))}</text>
+      <text x="688" y="${y + 18}" class="value-label" text-anchor="end">${escapeHtml(item.frequency)}</text>
+      <text x="148" y="${y + 43}" class="tiny-label">Avg severity ${escapeHtml(chartNumber(item.average_severity, 2))}</text>`;
+  });
+  svg += '</svg>';
+  svg += chartLegend([
+    { label: 'Weighted severity', color: CHART_COLORS.rust },
+    { label: 'Frequency', color: CHART_COLORS.gold }
+  ]);
+  return panel('Quadrant Distribution', 'Frequency and weighted severity by CIPQ domain', svg, '', guidance.read, guidance.meaning);
+}
+
+function renderStakeholderComparisonChart(layer) {
+  const guidance = chartGuidance(layer).stakeholder;
+  const stakeholderStats = layer.aggregates.stakeholder_stats.slice(0, 10);
+  if (!stakeholderStats.length) {
+    return panel('Stakeholder Comparison', 'Dominant domain and average severity', '<div class="no-data-msg">No stakeholder metadata available yet.</div>', '', guidance.read, guidance.meaning);
+  }
+  const rowHeight = 54;
+  const height = 54 + stakeholderStats.length * rowHeight;
+  let svg = `<svg class="chart-svg" role="img" aria-label="Stakeholder comparison chart" viewBox="0 0 900 ${height}">
+    <rect width="900" height="${height}" fill="${CHART_COLORS.paper}"/>
+    <text x="260" y="28" class="axis-label">dominant domain</text>
+    <text x="445" y="28" class="axis-label">average severity</text>
+    <text x="835" y="28" class="axis-label" text-anchor="middle">records</text>`;
+  stakeholderStats.forEach((item, index) => {
+    const stakeholderRecords = item.records || dataset.filter(record => record.Stakeholder === item.key);
+    const dominant = aggregateBy(stakeholderRecords, record => record.CIPQ_Domain, key => key)[0];
+    const domain = dominant?.key || 'Unspecified';
+    const y = 48 + index * rowHeight;
+    const severityWidth = Math.round((item.average_severity / 5) * 260);
+    svg += `
+      <text x="24" y="${y + 19}" font-size="13" font-weight="700">${escapeHtml(truncateLabel(item.label, 28))}</text>
+      <rect x="260" y="${y}" width="145" height="24" rx="12" fill="${domainColor(domain)}" opacity="0.16"/>
+      <text x="332" y="${y + 17}" font-size="11" text-anchor="middle" font-weight="700" fill="${domainColor(domain)}">${escapeHtml(domain)}</text>
+      <rect x="445" y="${y + 4}" width="260" height="16" rx="4" fill="${CHART_COLORS.cream}"/>
+      <rect x="445" y="${y + 4}" width="${severityWidth}" height="16" rx="4" fill="${domainColor(domain)}"/>
+      <text x="735" y="${y + 18}" class="value-label" text-anchor="middle">${escapeHtml(chartNumber(item.average_severity, 2))}</text>
+      <text x="835" y="${y + 18}" class="value-label" text-anchor="middle">${escapeHtml(item.frequency)}</text>`;
+  });
+  svg += '</svg>';
+  svg += chartLegend(VALID_DOMAINS.map(domain => ({ label: domain, color: domainColor(domain) })));
+  return panel('Stakeholder Comparison', 'Dominant domain, average severity, and record count', svg, '', guidance.read, guidance.meaning);
+}
+
+function renderPrioritySignalHeatmap(layer) {
+  const guidance = chartGuidance(layer).heatmap;
+  const signals = layer.priority_signals.slice(0, 14);
+  if (!signals.length) {
+    return panel('Priority Signal Heatmap', 'Indicators by weighted severity', '<div class="no-data-msg">No indicator signals available yet.</div>', 'wide', guidance.read, guidance.meaning);
+  }
+  const maxWeighted = Math.max(...signals.map(item => item.weighted_score), 1);
+  const rowHeight = 42;
+  const height = 60 + signals.length * rowHeight;
+  let svg = `<svg class="chart-svg" role="img" aria-label="Priority signal heatmap" viewBox="0 0 900 ${height}">
+    <rect width="900" height="${height}" fill="${CHART_COLORS.paper}"/>
+    <text x="24" y="30" class="axis-label">indicator</text>
+    <text x="470" y="30" class="axis-label">weighted severity heat</text>
+    <text x="650" y="30" class="axis-label">frequency</text>
+    <text x="745" y="30" class="axis-label">avg severity</text>`;
+  signals.forEach((signal, index) => {
+    const y = 48 + index * rowHeight;
+    const tileWidth = Math.max(20, Math.round((signal.weighted_score / maxWeighted) * 170));
+    svg += `
+      <text x="24" y="${y + 18}" font-size="12" font-weight="700">${escapeHtml(truncateLabel(signal.indicator, 48))}</text>
+      <rect x="470" y="${y}" width="180" height="24" rx="4" fill="${CHART_COLORS.cream}"/>
+      <rect x="470" y="${y}" width="${tileWidth}" height="24" rx="4" fill="${heatColor(signal.weighted_score, maxWeighted)}"/>
+      <text x="560" y="${y + 17}" class="value-label" text-anchor="middle">${escapeHtml(chartNumber(signal.weighted_score, 1))}</text>
+      <text x="682" y="${y + 17}" class="value-label" text-anchor="middle">${escapeHtml(signal.frequency)}</text>
+      <text x="790" y="${y + 17}" class="value-label" text-anchor="middle">${escapeHtml(chartNumber(signal.average_severity, 2))}</text>
+      <circle cx="850" cy="${y + 12}" r="6" fill="${domainColor(signal.domain)}"/>`;
+  });
+  svg += '</svg>';
+  return panel('Priority Signal Heatmap', 'Top indicators ranked by weighted severity', svg, 'wide', guidance.read, guidance.meaning);
+}
+
+function renderValueChainFlowChart(layer) {
+  const guidance = chartGuidance(layer).valueChain;
+  const items = layer.context_summaries.value_chain;
+  const maxFrequency = Math.max(...items.map(item => item.frequency), 1);
+  let svg = `<svg class="chart-svg" role="img" aria-label="Value chain flow summary" viewBox="0 0 920 310">
+    <defs>
+      <marker id="flowArrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+        <path d="M0,0 L0,6 L9,3 z" fill="${CHART_COLORS.border}"></path>
+      </marker>
+    </defs>
+    <rect width="920" height="310" fill="${CHART_COLORS.paper}"/>`;
+  for (let index = 0; index < items.length - 1; index += 1) {
+    const x1 = 54 + index * 220 + 176;
+    const x2 = 54 + (index + 1) * 220 - 16;
+    svg += `<line x1="${x1}" y1="78" x2="${x2}" y2="78" stroke="${CHART_COLORS.border}" stroke-width="4" stroke-linecap="round" marker-end="url(#flowArrow)"/>`;
+  }
+  items.forEach((item, index) => {
+    const x = 54 + index * 220;
+    const y = 104;
+    const pressureWidth = Math.round((item.frequency / maxFrequency) * 150);
+    const active = item.frequency > 0;
+    const fill = active ? CHART_COLORS.teal : '#dbe5e2';
+    const textColor = active ? 'white' : CHART_COLORS.ink;
+    const mutedTextColor = active ? 'white' : CHART_COLORS.muted;
+    svg += `
+      <rect x="${x}" y="${y}" width="172" height="120" rx="10" fill="${fill}"/>
+      <text x="${x + 86}" y="${y + 30}" font-size="14" font-weight="700" text-anchor="middle" fill="${textColor}">${escapeHtml(item.label)}</text>
+      <text x="${x + 86}" y="${y + 57}" font-size="12" font-family="IBM Plex Mono, monospace" text-anchor="middle" fill="${mutedTextColor}">${escapeHtml(recordCountLabel(item.frequency))}</text>
+      <text x="${x + 86}" y="${y + 78}" font-size="12" font-family="IBM Plex Mono, monospace" text-anchor="middle" fill="${mutedTextColor}">Avg severity ${escapeHtml(chartNumber(item.average_severity, 2))}</text>
+      <rect x="${x + 12}" y="${y + 94}" width="150" height="10" rx="3" fill="${active ? 'rgba(255,255,255,0.28)' : CHART_COLORS.cream}"/>
+      <rect x="${x + 12}" y="${y + 94}" width="${pressureWidth}" height="10" rx="3" fill="${active ? CHART_COLORS.gold : CHART_COLORS.border}"/>
+      <text x="${x + 86}" y="${y + 144}" class="tiny-label" text-anchor="middle">${escapeHtml(item.top_indicators.slice(0, 1).join('') || 'No top indicator yet')}</text>`;
+  });
+  svg += `<text x="460" y="276" class="axis-label" text-anchor="middle">Flow order follows the book value chain. Gold bars show relative pressure by record count.</text>`;
+  svg += '</svg>';
+  return panel('Value Chain Flow Summary', 'Where pressures accumulate across the book value chain', svg, '', guidance.read, guidance.meaning);
+}
+
+function renderPestleDistributionChart(layer) {
+  const guidance = chartGuidance(layer).pestle;
+  const items = layer.context_summaries.pestle;
+  const maxFrequency = Math.max(...items.map(item => item.frequency), 1);
+  const rowHeight = 42;
+  const height = 46 + items.length * rowHeight;
+  let svg = `<svg class="chart-svg" role="img" aria-label="PESTLE distribution chart" viewBox="0 0 680 ${height}">
+    <rect width="680" height="${height}" fill="${CHART_COLORS.paper}"/>`;
+  items.forEach((item, index) => {
+    const y = 34 + index * rowHeight;
+    const width = Math.round((item.frequency / maxFrequency) * 400);
+    svg += `
+      <text x="24" y="${y + 17}" font-size="13" font-weight="700">${escapeHtml(item.label)}</text>
+      <rect x="170" y="${y}" width="400" height="22" rx="4" fill="${CHART_COLORS.cream}"/>
+      <rect x="170" y="${y}" width="${width}" height="22" rx="4" fill="${CHART_COLORS.gold}"/>
+      <text x="590" y="${y + 16}" class="value-label">${escapeHtml(item.frequency)}</text>
+      <text x="630" y="${y + 16}" class="tiny-label">sev ${escapeHtml(chartNumber(item.average_severity, 2))}</text>`;
+  });
+  svg += '</svg>';
+  return panel('PESTLE Distribution', 'Macro-context tag frequency with average severity', svg, '', guidance.read, guidance.meaning);
+}
+
+function renderSeverityFrequencyScatter(layer) {
+  const guidance = chartGuidance(layer).scatter;
+  const items = layer.aggregates.indicator_stats.slice(0, 22);
+  if (!items.length) {
+    return panel('Severity vs Frequency Scatterplot', 'Widespread vs acute localized pressures', '<div class="no-data-msg">No indicators available yet.</div>', 'wide', guidance.read, guidance.meaning);
+  }
+  const maxFrequency = Math.max(...items.map(item => item.frequency), 1);
+  const labeledItemCodes = layer.priority_signals.slice(0, 8).map(signal => signal.indicator_code);
+  const labeledItems = new Set(labeledItemCodes);
+  const plot = { x: 70, y: 34, width: 700, height: 300 };
+  let svg = `<svg class="chart-svg" role="img" aria-label="Severity versus frequency scatterplot" viewBox="0 0 860 390">
+    <rect width="860" height="390" fill="${CHART_COLORS.paper}"/>
+    <line x1="${plot.x}" y1="${plot.y + plot.height}" x2="${plot.x + plot.width}" y2="${plot.y + plot.height}" stroke="${CHART_COLORS.border}" stroke-width="1.5"/>
+    <line x1="${plot.x}" y1="${plot.y}" x2="${plot.x}" y2="${plot.y + plot.height}" stroke="${CHART_COLORS.border}" stroke-width="1.5"/>
+    <line x1="${plot.x}" y1="${plot.y + plot.height * 0.25}" x2="${plot.x + plot.width}" y2="${plot.y + plot.height * 0.25}" stroke="${CHART_COLORS.border}" stroke-dasharray="4 6"/>
+    <line x1="${plot.x + plot.width * 0.5}" y1="${plot.y}" x2="${plot.x + plot.width * 0.5}" y2="${plot.y + plot.height}" stroke="${CHART_COLORS.border}" stroke-dasharray="4 6"/>
+    <text x="${plot.x + plot.width / 2}" y="372" class="axis-label" text-anchor="middle">frequency</text>
+    <text x="18" y="${plot.y + plot.height / 2}" class="axis-label" transform="rotate(-90 18 ${plot.y + plot.height / 2})" text-anchor="middle">average severity</text>
+    <text x="${plot.x}" y="${plot.y + plot.height + 20}" class="tiny-label">0</text>
+    <text x="${plot.x + plot.width}" y="${plot.y + plot.height + 20}" class="tiny-label" text-anchor="end">${escapeHtml(maxFrequency)}</text>
+    <text x="${plot.x - 12}" y="${plot.y + 5}" class="tiny-label" text-anchor="end">5</text>
+    <text x="${plot.x - 12}" y="${plot.y + plot.height}" class="tiny-label" text-anchor="end">0</text>`;
+  items.forEach((item, index) => {
+    const x = plot.x + (item.frequency / maxFrequency) * plot.width;
+    const y = plot.y + plot.height - (item.average_severity / 5) * plot.height;
+    const radius = 5 + Math.min(12, item.weighted_score / Math.max(maxFrequency, 1));
+    const labelIndex = labeledItemCodes.indexOf(item.key);
+    svg += `
+      <circle cx="${roundTo(x, 1)}" cy="${roundTo(y, 1)}" r="${roundTo(radius, 1)}" fill="${domainColor(item.domain)}" opacity="0.82">
+        <title>${escapeHtml(item.label)} | Frequency ${item.frequency} | Avg severity ${chartNumber(item.average_severity, 2)}</title>
+      </circle>`;
+    if (labelIndex >= 0) {
+      svg += `<circle cx="${roundTo(x, 1)}" cy="${roundTo(y, 1)}" r="9" fill="${CHART_COLORS.paper}" stroke="${domainColor(item.domain)}" stroke-width="2"/>
+        <text x="${roundTo(x, 1)}" y="${roundTo(y + 4, 1)}" font-size="10" font-weight="700" text-anchor="middle">${labelIndex + 1}</text>`;
+    }
+  });
+  svg += '</svg>';
+  svg += chartLegend(VALID_DOMAINS.map(domain => ({ label: domain, color: domainColor(domain) })));
+  svg += `<div class="chart-legend">${layer.priority_signals.slice(0, 8).map((signal, index) => `
+    <span class="legend-item"><strong>${index + 1}.</strong> ${escapeHtml(truncateLabel(signal.indicator, 34))}</span>
+  `).join('')}</div>`;
+  return panel('Severity vs Frequency Scatterplot', 'Position indicators by recurrence and seriousness', svg, 'wide', guidance.read, guidance.meaning);
+}
+
+function renderChartVisualizations(layer) {
+  return `<div class="section-title">Graph Visualizations <span>Readable exports for report writing, presentations, and policy discussion</span></div>
+    <div class="chart-grid">
+      ${renderQuadrantDistributionChart(layer)}
+      ${renderStakeholderComparisonChart(layer)}
+      ${renderPrioritySignalHeatmap(layer)}
+      ${renderValueChainFlowChart(layer)}
+      ${renderPestleDistributionChart(layer)}
+      ${renderSeverityFrequencyScatter(layer)}
+    </div>`;
+}
+
+function buildChartPackHtml(layer) {
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>CIPQ Chart Pack</title>
+<style>
+  body { font-family: Arial, sans-serif; color: #1a1a2e; background: #f5f0e8; padding: 24px; }
+  h1 { margin: 0 0 4px; font-family: Georgia, serif; }
+  .meta { color: #7a7065; margin-bottom: 24px; }
+  .chart-grid { display: block; }
+  .chart-panel { page-break-inside: avoid; background: white; border: 1px solid #c8bfae; border-radius: 8px; padding: 18px; margin-bottom: 22px; }
+  .chart-panel h3 { margin: 0 0 4px; font-family: Georgia, serif; }
+  .chart-note, .axis-label, .tiny-label, .value-label, .chart-legend { font-family: Arial, sans-serif; color: #7a7065; }
+  .chart-note { font-size: 11px; text-transform: uppercase; margin-bottom: 10px; }
+  .chart-svg { width: 100%; height: auto; border: 1px solid #c8bfae; border-radius: 6px; }
+  .chart-legend { font-size: 11px; margin-top: 8px; }
+  .legend-item { display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; }
+  .legend-swatch { width: 10px; height: 10px; display: inline-block; }
+</style>
+</head>
+<body>
+  <h1>CIPQ Chart Pack</h1>
+  <div class="meta">Generated ${escapeHtml(new Date().toISOString())} | ${dataset.length} coded segments</div>
+  ${renderChartVisualizations(layer)}
+</body>
+</html>`;
+}
+
+function downloadChartPack() {
+  const layer = buildInterpretiveLayer();
+  if (!layer) {
+    showStatus('No chart data to export yet.', true);
+    return;
+  }
+
+  downloadBlob(`CIPQ_Chart_Pack_${reportDateStamp()}.html`, buildChartPackHtml(layer), 'text/html;charset=utf-8');
 }
 
 function getTopExamples(records, maxItems = 3) {
@@ -1782,7 +2398,7 @@ function generateContextInterpretation(kind, item) {
 function buildContextSummaries(records) {
   const valueChainStats = fillContextStats(
     VALUE_CHAIN_STAGES,
-    aggregateBy(records.filter(record => record.Value_Chain_Stage), record => record.Value_Chain_Stage, key => key)
+    aggregateBy(records.filter(record => valueChainStageForAnalysis(record)), record => valueChainStageForAnalysis(record), key => key)
   );
 
   const pestleExpandedRecords = [];
@@ -1854,6 +2470,14 @@ function buildInterpretiveExport(layer) {
       main_charts: ['quadrant_frequency_chart', 'indicator_severity_chart', 'stakeholder_comparison_chart'],
       chart_explanations: layer.chart_explanations,
       quadrant_cards: layer.quadrant_cards,
+      graph_visualizations: [
+        'quadrant_distribution',
+        'stakeholder_comparison',
+        'priority_signal_heatmap',
+        'value_chain_flow_summary',
+        'pestle_distribution',
+        'severity_frequency_scatterplot'
+      ],
       value_chain_pressure_mapping: true,
       pestle_context_summary: true,
       cross_quadrant_reading: layer.cross_quadrant_reading,
@@ -1931,19 +2555,45 @@ function exportInterpretiveJson() {
   downloadBlob(`CIPQ_Interpretive_Layer_${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
 }
 
-function downloadClientReport() {
-  const layer = buildInterpretiveLayer();
-  if (!layer) {
-    showStatus('No data to export yet.', true);
-    return;
-  }
+function buildClientReportText(layer) {
+  const sourceTypeCounts = mostCommon(dataset.map(record => record.Source_Type || 'Unspecified'), 20);
+  const optionalValueChainCount = dataset.filter(record => record.Value_Chain_Stage).length;
+  const valueChainAnalysisCount = dataset.filter(record => valueChainStageForAnalysis(record)).length;
+  const optionalPestleCount = dataset.filter(record => record.PESTLE_Tags?.length).length;
+  const severityValues = dataset.map(record => record.Severity).filter(Number.isFinite);
 
   const lines = [];
   lines.push('CIPQ Client Report');
   lines.push(`Generated: ${new Date().toISOString()}`);
   lines.push('');
+  lines.push('Dataset Totals');
+  lines.push(`- Total coded segments: ${dataset.length}`);
+  lines.push(`- Average severity: ${roundTo(mean(severityValues), 2)}`);
+  lines.push(`- Severity range: ${severityValues.length ? `${Math.min(...severityValues)} to ${Math.max(...severityValues)}` : 'No severity values'}`);
+  lines.push(`- Active indicators: ${layer.aggregates.indicator_stats.length}`);
+  lines.push(`- Stakeholder groups: ${countDistinct(dataset.map(record => record.Stakeholder))}`);
+  lines.push(`- Regions: ${countDistinct(dataset.map(record => record.Region))}`);
+  lines.push(`- Value Chain analyzed records: ${valueChainAnalysisCount}`);
+  lines.push(`- Explicit Value Chain tagged records: ${optionalValueChainCount}`);
+  lines.push(`- PESTLE tagged records: ${optionalPestleCount}`);
+  if (sourceTypeCounts.length) {
+    lines.push(`- Source totals: ${sourceTypeCounts.map(item => `${item.label} ${item.count}`).join('; ')}`);
+  }
+  lines.push('');
   lines.push('Policy Insights');
   layer.dashboard_summary.sentences.forEach(sentence => lines.push(`- ${sentence}`));
+  lines.push('');
+  lines.push('Quadrant Summary Table');
+  lines.push('Quadrant | Frequency | Avg Severity | Weighted Score | Stakeholder Spread | Top Indicators');
+  layer.aggregates.quadrant_stats.forEach(item => {
+    lines.push(`${item.label} | ${item.frequency} | ${roundTo(item.average_severity, 2)} | ${roundTo(item.weighted_score, 2)} | ${item.stakeholder_spread} | ${item.top_indicators.join(', ') || '-'}`);
+  });
+  lines.push('');
+  lines.push('Indicator Summary Table');
+  lines.push('Indicator Code | Indicator | Frequency | Avg Severity | Weighted Score | Stakeholder Spread | Confidence');
+  layer.aggregates.indicator_stats.forEach(item => {
+    lines.push(`${item.key} | ${item.label} | ${item.frequency} | ${roundTo(item.average_severity, 2)} | ${roundTo(item.weighted_score, 2)} | ${item.stakeholder_spread} | ${item.confidence_label}`);
+  });
   lines.push('');
   lines.push('Quadrant Summary Cards');
   layer.quadrant_cards.forEach(card => {
@@ -1981,7 +2631,563 @@ function downloadClientReport() {
   lines.push('Cross-Quadrant Reading');
   layer.cross_quadrant_reading.forEach(reading => lines.push(`- ${reading.sentence}`));
 
-  downloadBlob(`CIPQ_Client_Report_${new Date().toISOString().slice(0, 10)}.txt`, lines.join('\r\n'), 'text/plain;charset=utf-8');
+  if (layer.validation.issue_count) {
+    lines.push('');
+    lines.push('Validation Notes');
+    layer.validation.issues.slice(0, 20).forEach(item => {
+      lines.push(`- ${item.id}: ${item.issues.join('; ')}`);
+    });
+  }
+
+  return lines.join('\r\n');
+}
+
+function wordCell(value, style = '') {
+  return `<td style="border:1px solid #c8bfae;padding:6px;vertical-align:top;${style}">${escapeHtml(value ?? '')}</td>`;
+}
+
+function wordHeader(labels) {
+  return `<tr>${labels.map(label => `<th style="border:1px solid #c8bfae;padding:6px;background:#ede8dc;text-align:left">${escapeHtml(label)}</th>`).join('')}</tr>`;
+}
+
+function wordExplainBlock(reading, meaning) {
+  return `<p style="background:#f5f0e8;border:1px solid #c8bfae;padding:8px;margin:6px 0 10px">
+    <strong>How to read this:</strong> ${escapeHtml(reading)}<br>
+    <strong>What it means:</strong> ${escapeHtml(meaning)}
+  </p>`;
+}
+
+function wordBar(value, maxValue, color) {
+  const width = maxValue ? Math.max(3, Math.round((value / maxValue) * 100)) : 0;
+  return `<div style="width:100%;background:#ede8dc;height:14px;border-radius:3px">
+    <div style="width:${width}%;background:${color};height:14px;border-radius:3px"></div>
+  </div>`;
+}
+
+function pressureCategory(item) {
+  if (item.frequency >= 3 && item.average_severity >= 4) return 'Widespread high severity';
+  if (item.frequency < 3 && item.average_severity >= 4) return 'Critical localized';
+  if (item.frequency >= 3) return 'Widespread moderate';
+  return 'Emergent/localized';
+}
+
+function buildWordVisualTables(layer) {
+  const guidance = chartGuidance(layer);
+  const quadrantItems = VALID_DOMAINS.map(domain => {
+    const stat = layer.aggregates.quadrant_stats.find(item => item.key === domain);
+    return stat || { key: domain, label: domain, frequency: 0, weighted_score: 0, average_severity: 0, stakeholder_spread: 0, top_indicators: [] };
+  });
+  const maxQuadrantWeighted = Math.max(...quadrantItems.map(item => item.weighted_score), 1);
+  const maxQuadrantFrequency = Math.max(...quadrantItems.map(item => item.frequency), 1);
+  const maxPestleFrequency = Math.max(...layer.context_summaries.pestle.map(item => item.frequency), 1);
+  const maxValueChainFrequency = Math.max(...layer.context_summaries.value_chain.map(item => item.frequency), 1);
+  const maxSignalWeighted = Math.max(...layer.priority_signals.map(item => item.weighted_score), 1);
+
+  let html = '<h2>Word-Safe Visual Summary Tables</h2><p>The following tables repeat the graph findings in a Word-safe format so the report remains readable even if a Word version does not preserve SVG charts perfectly.</p>';
+
+  html += `<h3>Quadrant Distribution</h3>${wordExplainBlock(guidance.quadrant.read, guidance.quadrant.meaning)}<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;margin-bottom:16px">`;
+  html += wordHeader(['Quadrant', 'Weighted Severity', 'Frequency', 'Avg Severity']);
+  quadrantItems.forEach(item => {
+    html += `<tr>${wordCell(item.label)}<td style="border:1px solid #c8bfae;padding:6px">${wordBar(item.weighted_score, maxQuadrantWeighted, domainColor(item.key))}<div>${escapeHtml(chartNumber(item.weighted_score, 1))}</div></td><td style="border:1px solid #c8bfae;padding:6px">${wordBar(item.frequency, maxQuadrantFrequency, CHART_COLORS.gold)}<div>${escapeHtml(item.frequency)}</div></td>${wordCell(chartNumber(item.average_severity, 2))}</tr>`;
+  });
+  html += '</table>';
+
+  html += `<h3>Stakeholder Comparison</h3>${wordExplainBlock(guidance.stakeholder.read, guidance.stakeholder.meaning)}<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;margin-bottom:16px">`;
+  html += wordHeader(['Stakeholder', 'Dominant Domain', 'Avg Severity', 'Frequency']);
+  layer.aggregates.stakeholder_stats.slice(0, 12).forEach(item => {
+    const dominant = aggregateBy(item.records || [], record => record.CIPQ_Domain, key => key)[0];
+    html += `<tr>${wordCell(item.label)}${wordCell(dominant?.key || 'Unspecified')}${wordCell(chartNumber(item.average_severity, 2))}${wordCell(item.frequency)}</tr>`;
+  });
+  html += '</table>';
+
+  html += `<h3>Priority Signal Heatmap</h3>${wordExplainBlock(guidance.heatmap.read, guidance.heatmap.meaning)}<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;margin-bottom:16px">`;
+  html += wordHeader(['Indicator', 'Weighted Severity', 'Frequency', 'Avg Severity', 'Classification']);
+  layer.priority_signals.slice(0, 15).forEach(signal => {
+    html += `<tr>${wordCell(signal.indicator)}<td style="border:1px solid #c8bfae;padding:6px;background:${heatColor(signal.weighted_score, maxSignalWeighted)}">${escapeHtml(chartNumber(signal.weighted_score, 1))}</td>${wordCell(signal.frequency)}${wordCell(chartNumber(signal.average_severity, 2))}${wordCell(signal.classification.replace(/_/g, ' '))}</tr>`;
+  });
+  html += '</table>';
+
+  html += `<h3>Value Chain Flow Summary</h3>${wordExplainBlock(guidance.valueChain.read, guidance.valueChain.meaning)}<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;margin-bottom:16px">`;
+  html += wordHeader(layer.context_summaries.value_chain.map(item => item.label));
+  html += '<tr>';
+  layer.context_summaries.value_chain.forEach(item => {
+    html += `<td style="border:1px solid #c8bfae;padding:8px;vertical-align:top">${wordBar(item.frequency, maxValueChainFrequency, CHART_COLORS.teal)}<div><strong>${escapeHtml(recordCountLabel(item.frequency))}</strong></div><div>Avg severity ${escapeHtml(chartNumber(item.average_severity, 2))}</div><div>${escapeHtml(item.top_indicators.join(', ') || 'No indicators yet')}</div></td>`;
+  });
+  html += '</tr></table>';
+
+  html += `<h3>PESTLE Distribution</h3>${wordExplainBlock(guidance.pestle.read, guidance.pestle.meaning)}<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;margin-bottom:16px">`;
+  html += wordHeader(['Tag', 'Frequency', 'Avg Severity', 'Bar']);
+  layer.context_summaries.pestle.forEach(item => {
+    html += `<tr>${wordCell(item.label)}${wordCell(item.frequency)}${wordCell(chartNumber(item.average_severity, 2))}<td style="border:1px solid #c8bfae;padding:6px">${wordBar(item.frequency, maxPestleFrequency, CHART_COLORS.gold)}</td></tr>`;
+  });
+  html += '</table>';
+
+  html += `<h3>Severity vs Frequency Scatterplot Data</h3>${wordExplainBlock(guidance.scatter.read, guidance.scatter.meaning)}<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;margin-bottom:16px">`;
+  html += wordHeader(['Indicator', 'Frequency', 'Avg Severity', 'Policy Reading']);
+  layer.aggregates.indicator_stats.slice(0, 18).forEach(item => {
+    html += `<tr>${wordCell(item.label)}${wordCell(item.frequency)}${wordCell(chartNumber(item.average_severity, 2))}${wordCell(pressureCategory(item))}</tr>`;
+  });
+  html += '</table>';
+
+  return html;
+}
+
+function buildReportNarrativeHtml(layer) {
+  const severityValues = dataset.map(record => record.Severity).filter(Number.isFinite);
+  const sourceTypeCounts = mostCommon(dataset.map(record => record.Source_Type || 'Unspecified'), 20);
+  const sourceTotals = sourceTypeCounts.length
+    ? sourceTypeCounts.map(item => `${item.label} ${item.count}`).join('; ')
+    : 'No source metadata available yet';
+  const valueChainAnalysisCount = dataset.filter(record => valueChainStageForAnalysis(record)).length;
+  const explicitValueChainCount = dataset.filter(record => record.Value_Chain_Stage).length;
+
+  let html = '<h2>Dataset Totals</h2>';
+  html += `<p>The current CIPQ backbone contains <strong>${escapeHtml(dataset.length)}</strong> coded segment${dataset.length !== 1 ? 's' : ''}. Average severity is <strong>${escapeHtml(roundTo(mean(severityValues), 2))}</strong>${severityValues.length ? `, with a severity range of <strong>${escapeHtml(Math.min(...severityValues))} to ${escapeHtml(Math.max(...severityValues))}</strong>` : ''}. The dataset currently covers <strong>${escapeHtml(layer.aggregates.indicator_stats.length)}</strong> active indicators, <strong>${escapeHtml(countDistinct(dataset.map(record => record.Stakeholder)))}</strong> stakeholder group${countDistinct(dataset.map(record => record.Stakeholder)) !== 1 ? 's' : ''}, and <strong>${escapeHtml(countDistinct(dataset.map(record => record.Region)))}</strong> region${countDistinct(dataset.map(record => record.Region)) !== 1 ? 's' : ''}.</p>`;
+  html += `<p><strong>Value Chain note:</strong> ${escapeHtml(valueChainAnalysisCount)} records are included in Value Chain analysis. ${escapeHtml(explicitValueChainCount)} have an explicit Value Chain Stage; records without that optional field are inferred from their CIPQ domain for reporting continuity.</p>`;
+  html += `<p><strong>Source totals:</strong> ${escapeHtml(sourceTotals)}.</p>`;
+
+  html += '<h2>Quadrant Summary</h2>';
+  layer.quadrant_cards.forEach(card => {
+    html += `<h3>${escapeHtml(card.quadrant)}</h3>`;
+    html += `<p>${escapeHtml(card.summary_text)}</p>`;
+    html += `<p><strong>Frequency:</strong> ${escapeHtml(card.frequency)} | <strong>Average severity:</strong> ${escapeHtml(chartNumber(card.average_severity, 2))} | <strong>Confidence:</strong> ${escapeHtml(card.confidence_label)}. ${card.top_indicators.length ? `<strong>Top indicators:</strong> ${escapeHtml(card.top_indicators.join(', '))}.` : ''}</p>`;
+  });
+
+  html += '<h2>Priority Policy Signals</h2>';
+  layer.priority_signals.slice(0, 10).forEach(signal => {
+    html += `<h3>${escapeHtml(signal.indicator)}</h3>`;
+    html += `<p>${escapeHtml(signal.narrative)}</p>`;
+    html += `<p><strong>Frequency:</strong> ${escapeHtml(signal.frequency)} | <strong>Average severity:</strong> ${escapeHtml(chartNumber(signal.average_severity, 2))} | <strong>Weighted score:</strong> ${escapeHtml(chartNumber(signal.weighted_score, 2))} | <strong>Classification:</strong> ${escapeHtml(signal.classification.replace(/_/g, ' '))}.</p>`;
+  });
+
+  html += '<h2>Value Chain Pressure Mapping</h2>';
+  layer.context_summaries.value_chain.forEach(item => {
+    html += `<h3>${escapeHtml(item.label)}</h3>`;
+    html += `<p>${escapeHtml(item.interpretation)}</p>`;
+  });
+
+  html += '<h2>PESTLE Context Summary</h2>';
+  layer.context_summaries.pestle.forEach(item => {
+    html += `<h3>${escapeHtml(item.label)}</h3>`;
+    html += `<p>${escapeHtml(item.interpretation)}</p>`;
+  });
+
+  html += '<h2>Stakeholder Perspectives</h2>';
+  if (layer.stakeholder_insights.length) {
+    layer.stakeholder_insights.forEach(insight => {
+      html += `<h3>${escapeHtml(insight.stakeholder)}</h3>`;
+      html += `<p>${escapeHtml(insight.narrative)}</p>`;
+      if (insight.difference_note) html += `<p>${escapeHtml(insight.difference_note)}</p>`;
+    });
+  } else {
+    html += '<p>No stakeholder comparison is available yet because stakeholder metadata has not been encoded.</p>';
+  }
+
+  html += '<h2>Cross-Quadrant Reading</h2>';
+  layer.cross_quadrant_reading.forEach(reading => {
+    html += `<p>${escapeHtml(reading.sentence)}</p>`;
+  });
+
+  return html;
+}
+
+function buildClientReportWordHtml(layer) {
+  const summaryRows = buildSummaryTableRows(layer);
+  const summaryTableRows = summaryRows.slice(0, 80).map(row => `<tr>
+    ${wordCell(row.Section)}
+    ${wordCell(row.Label)}
+    ${wordCell(row.Frequency)}
+    ${wordCell(row.Average_Severity)}
+    ${wordCell(row.Weighted_Score)}
+    ${wordCell(row.Stakeholder_Spread)}
+    ${wordCell(row.Notes)}
+  </tr>`).join('');
+  const insights = layer.dashboard_summary.sentences.map(sentence => `<li>${escapeHtml(sentence)}</li>`).join('');
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>CIPQ Client Report</title>
+<style>
+  body { font-family: Arial, sans-serif; color: #1a1a2e; line-height: 1.45; }
+  h1, h2, h3 { font-family: Georgia, serif; color: #1a1a2e; }
+  h1 { font-size: 24pt; margin-bottom: 4px; }
+  h2 { font-size: 16pt; margin-top: 22px; border-bottom: 1px solid #c8bfae; padding-bottom: 4px; }
+  h3 { font-size: 12pt; margin-top: 16px; }
+  .meta { color: #7a7065; margin-bottom: 18px; }
+  table { font-size: 9.5pt; }
+  li { margin-bottom: 5px; }
+  .section-title { font-family: Georgia, serif; font-size: 16pt; margin-top: 22px; border-bottom: 1px solid #c8bfae; padding-bottom: 4px; }
+  .section-title span { display: block; font-family: Arial, sans-serif; font-size: 9pt; color: #7a7065; font-weight: normal; }
+  .chart-grid { display: block; }
+  .chart-panel { page-break-inside: avoid; border: 1px solid #c8bfae; padding: 12px; margin-bottom: 16px; background: #fffdf8; }
+  .chart-note { color: #7a7065; font-size: 8.5pt; text-transform: uppercase; margin-bottom: 8px; }
+  .chart-help { background: #f5f0e8; border: 1px solid #c8bfae; padding: 8px; margin-bottom: 10px; }
+  .chart-help p { margin: 0 0 4px; }
+  .chart-svg { width: 100%; height: auto; border: 1px solid #c8bfae; }
+  .chart-legend { font-size: 8.5pt; color: #7a7065; margin-top: 6px; }
+  .legend-item { margin-right: 10px; }
+  .legend-swatch { width: 10px; height: 10px; display: inline-block; }
+</style>
+</head>
+<body>
+  <h1>CIPQ Client Report</h1>
+  <div class="meta">Generated ${escapeHtml(new Date().toISOString())} | ${dataset.length} coded segments</div>
+  <h2>Policy Insights</h2>
+  <ul>${insights}</ul>
+  ${buildReportNarrativeHtml(layer)}
+  <h2>Graph Visualizations</h2>
+  <p>These charts are included for report writing and stakeholder presentation. If a Word version does not preserve the SVG graphics exactly, the Word-safe visual summary tables below contain the same findings in table form.</p>
+  ${renderChartVisualizations(layer)}
+  ${buildWordVisualTables(layer)}
+  <h2>Summary Tables</h2>
+  <table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%">
+    ${wordHeader(['Section', 'Label', 'Frequency', 'Avg Severity', 'Weighted', 'Stakeholder Spread', 'Notes'])}
+    ${summaryTableRows}
+  </table>
+  <h2>Validation Notes</h2>
+  ${layer.validation.issue_count
+    ? `<ul>${layer.validation.issues.slice(0, 30).map(item => `<li><strong>${escapeHtml(item.id)}</strong>: ${escapeHtml(item.issues.join('; '))}</li>`).join('')}</ul>`
+    : '<p>No validation warnings in the current dataset.</p>'}
+</body>
+</html>`;
+}
+
+function cloneSimulationDefaults() {
+  return JSON.parse(JSON.stringify(DEFAULT_SIMULATION_STATE));
+}
+
+function getSimulationBaseline(layer = null) {
+  const activeLayer = layer || buildInterpretiveLayer();
+  const stats = activeLayer?.aggregates?.quadrant_stats || [];
+  const baseline = {};
+  VALID_DOMAINS.forEach(domain => {
+    const stat = stats.find(item => item.key === domain);
+    baseline[domain] = roundTo(stat?.weighted_score || 0, 2);
+  });
+  return baseline;
+}
+
+function totalPressure(values) {
+  return sum(Object.values(values).filter(Number.isFinite));
+}
+
+function balanceIndex(values) {
+  const entries = Object.values(values).filter(Number.isFinite);
+  if (!entries.length) return 0;
+  const average = mean(entries);
+  if (!average) return 100;
+  const maxDeviation = Math.max(...entries.map(value => Math.abs(value - average)));
+  return roundTo(Math.max(0, 100 - ((maxDeviation / average) * 100)), 1);
+}
+
+function strongestDomain(values) {
+  return VALID_DOMAINS
+    .map(domain => ({ domain, value: values[domain] || 0 }))
+    .sort((a, b) => b.value - a.value)[0];
+}
+
+function redistributePressure(values, sourceDomain, amount) {
+  const weights = SIMULATION_DEPENDENCY_MATRIX[sourceDomain] || {};
+  Object.entries(weights).forEach(([targetDomain, weight]) => {
+    values[targetDomain] = (values[targetDomain] || 0) + (amount * weight);
+  });
+}
+
+function simulateEquilibrium(layer = null, state = simulationState) {
+  const baseline = getSimulationBaseline(layer);
+  const projected = {};
+  let redistributedPool = 0;
+  VALID_DOMAINS.forEach(domain => {
+    const base = baseline[domain] || 0;
+    const reliefRate = (state.relief[domain] || 0) / 100;
+    const shockRate = (state.shock[domain] || 0) / 100;
+    const relievedPressure = base * reliefRate;
+    projected[domain] = Math.max(0, base - relievedPressure + (base * shockRate));
+    redistributePressure(projected, domain, relievedPressure * ((state.redistribution || 0) / 100));
+    redistributedPool += relievedPressure * ((state.redistribution || 0) / 100);
+  });
+
+  const rounds = Math.max(1, Math.min(6, parseInt(state.rounds, 10) || 1));
+  const balancingRate = Math.max(0, Math.min(60, state.balancing || 0)) / 100;
+  for (let round = 0; round < rounds; round += 1) {
+    const average = mean(VALID_DOMAINS.map(domain => projected[domain] || 0));
+    VALID_DOMAINS.forEach(domain => {
+      const surplus = Math.max(0, (projected[domain] || 0) - average) * balancingRate * 0.25;
+      if (!surplus) return;
+      projected[domain] = Math.max(0, projected[domain] - surplus);
+      redistributePressure(projected, domain, surplus);
+      redistributedPool += surplus;
+    });
+  }
+
+  VALID_DOMAINS.forEach(domain => {
+    projected[domain] = roundTo(projected[domain] || 0, 2);
+  });
+
+  const rows = VALID_DOMAINS.map(domain => ({
+    domain,
+    baseline: baseline[domain] || 0,
+    projected: projected[domain] || 0,
+    change: roundTo((projected[domain] || 0) - (baseline[domain] || 0), 2),
+    relief: state.relief[domain] || 0,
+    shock: state.shock[domain] || 0
+  }));
+
+  return {
+    baseline,
+    projected,
+    rows,
+    total_baseline: roundTo(totalPressure(baseline), 2),
+    total_projected: roundTo(totalPressure(projected), 2),
+    balance_baseline: balanceIndex(baseline),
+    balance_projected: balanceIndex(projected),
+    strongest_baseline: strongestDomain(baseline),
+    strongest_projected: strongestDomain(projected),
+    redistributed_pressure: roundTo(redistributedPool, 2),
+    state
+  };
+}
+
+function simulationConsequenceText(result) {
+  if (!result.total_baseline) return 'The simulator needs coded data before it can establish a baseline pressure state.';
+  const totalChange = roundTo(result.total_projected - result.total_baseline, 2);
+  const balanceChange = roundTo(result.balance_projected - result.balance_baseline, 1);
+  const direction = totalChange < 0 ? 'reduces' : totalChange > 0 ? 'increases' : 'keeps';
+  const balanceDirection = balanceChange > 0 ? 'more balanced' : balanceChange < 0 ? 'less balanced' : 'similarly balanced';
+  return `This scenario ${direction} total modeled pressure by ${Math.abs(totalChange).toFixed(2)} weighted points and leaves the ecosystem ${balanceDirection}. The dominant projected pressure is ${result.strongest_projected.domain}, suggesting that policy consequences should be checked most carefully in that domain.`;
+}
+
+function simulationRedistributionText(result) {
+  const rising = result.rows.filter(row => row.change > 0).sort((a, b) => b.change - a.change);
+  const falling = result.rows.filter(row => row.change < 0).sort((a, b) => a.change - b.change);
+  if (!rising.length && !falling.length) return 'No redistribution is visible yet because all scenario controls are at baseline.';
+  const riseText = rising.length ? `pressure rises in ${rising.map(row => `${row.domain} (+${row.change.toFixed(2)})`).join(', ')}` : 'no domain absorbs additional pressure';
+  const fallText = falling.length ? `pressure falls in ${falling.map(row => `${row.domain} (${row.change.toFixed(2)})`).join(', ')}` : 'no domain shows pressure relief';
+  return `Under this scenario, ${fallText}, while ${riseText}. This is the redistribution pattern to discuss before treating an intervention as system-wide relief.`;
+}
+
+function renderSimulationChart(result) {
+  const maxValue = Math.max(...result.rows.flatMap(row => [row.baseline, row.projected]), 1);
+  const rowHeight = 70;
+  const height = 64 + result.rows.length * rowHeight;
+  let svg = `<svg class="chart-svg" role="img" aria-label="Scenario equilibrium simulation" viewBox="0 0 860 ${height}">
+    <rect width="860" height="${height}" fill="${CHART_COLORS.paper}"/>
+    <text x="190" y="28" class="axis-label">baseline pressure</text>
+    <text x="510" y="28" class="axis-label">projected pressure</text>
+    <text x="780" y="28" class="axis-label" text-anchor="middle">change</text>`;
+  result.rows.forEach((row, index) => {
+    const y = 52 + index * rowHeight;
+    const baselineWidth = Math.round((row.baseline / maxValue) * 240);
+    const projectedWidth = Math.round((row.projected / maxValue) * 240);
+    const changeColor = row.change > 0 ? CHART_COLORS.rust : row.change < 0 ? CHART_COLORS.teal : CHART_COLORS.muted;
+    svg += `
+      <text x="24" y="${y + 20}" font-size="14" font-weight="700">${escapeHtml(row.domain)}</text>
+      <rect x="190" y="${y}" width="240" height="18" rx="4" fill="${CHART_COLORS.cream}"/>
+      <rect x="190" y="${y}" width="${baselineWidth}" height="18" rx="4" fill="${domainColor(row.domain)}" opacity="0.45"/>
+      <text x="444" y="${y + 15}" class="value-label">${escapeHtml(chartNumber(row.baseline, 2))}</text>
+      <rect x="510" y="${y}" width="240" height="18" rx="4" fill="${CHART_COLORS.cream}"/>
+      <rect x="510" y="${y}" width="${projectedWidth}" height="18" rx="4" fill="${domainColor(row.domain)}"/>
+      <text x="764" y="${y + 15}" class="value-label">${escapeHtml(chartNumber(row.projected, 2))}</text>
+      <text x="820" y="${y + 15}" class="value-label" text-anchor="end" fill="${changeColor}">${row.change > 0 ? '+' : ''}${escapeHtml(chartNumber(row.change, 2))}</text>
+      <text x="190" y="${y + 42}" class="tiny-label">support ${escapeHtml(row.relief)}% | shock ${escapeHtml(row.shock)}%</text>`;
+  });
+  svg += '</svg>';
+  svg += chartLegend([
+    { label: 'Pale bars: current baseline', color: CHART_COLORS.border },
+    { label: 'Solid bars: simulated equilibrium', color: CHART_COLORS.teal }
+  ]);
+  return svg;
+}
+
+function simulationControlRow(domain) {
+  return `<div class="sim-control">
+    <div class="sim-control-head">
+      <strong>${escapeHtml(domain)}</strong>
+      <span>Support ${escapeHtml(simulationState.relief[domain])}% | Shock ${escapeHtml(simulationState.shock[domain])}%</span>
+    </div>
+    <div class="sim-slider-row">
+      <label>Support</label>
+      <input type="range" min="0" max="70" value="${escapeHtml(simulationState.relief[domain])}" oninput="updateSimulationControl('relief','${domain}',this.value)">
+      <span>${escapeHtml(simulationState.relief[domain])}%</span>
+    </div>
+    <div class="sim-slider-row">
+      <label>Shock</label>
+      <input type="range" min="0" max="60" value="${escapeHtml(simulationState.shock[domain])}" oninput="updateSimulationControl('shock','${domain}',this.value)">
+      <span>${escapeHtml(simulationState.shock[domain])}%</span>
+    </div>
+  </div>`;
+}
+
+function renderSimulator() {
+  const mount = document.getElementById('simulatorContent');
+  if (!mount) return;
+  const layer = buildInterpretiveLayer();
+  if (!layer) {
+    mount.innerHTML = '<div class="no-data-msg">No data yet. Encode or import segments first, then run scenario simulations.</div>';
+    return;
+  }
+
+  const result = simulateEquilibrium(layer, simulationState);
+  let html = `<div class="sim-grid">
+    <section class="sim-panel">
+      <h3>Scenario Controls</h3>
+      <div class="sim-note">Support reduces direct pressure in a domain. Shock increases pressure. Redistribution estimates how much relieved pressure reappears elsewhere in the ecosystem.</div>
+      ${VALID_DOMAINS.map(simulationControlRow).join('')}
+      <div class="sim-control">
+        <div class="sim-control-head"><strong>System Coupling</strong><span>${escapeHtml(simulationState.redistribution)}%</span></div>
+        <div class="sim-slider-row">
+          <label>Redistrib.</label>
+          <input type="range" min="0" max="80" value="${escapeHtml(simulationState.redistribution)}" oninput="updateSimulationControl('system','redistribution',this.value)">
+          <span>${escapeHtml(simulationState.redistribution)}%</span>
+        </div>
+        <div class="sim-slider-row">
+          <label>Balancing</label>
+          <input type="range" min="0" max="60" value="${escapeHtml(simulationState.balancing)}" oninput="updateSimulationControl('system','balancing',this.value)">
+          <span>${escapeHtml(simulationState.balancing)}%</span>
+        </div>
+        <div class="sim-slider-row">
+          <label>Rounds</label>
+          <input type="range" min="1" max="6" value="${escapeHtml(simulationState.rounds)}" oninput="updateSimulationControl('system','rounds',this.value)">
+          <span>${escapeHtml(simulationState.rounds)}</span>
+        </div>
+      </div>
+    </section>
+    <section class="sim-panel">
+      <h3>Projected Dynamic Equilibrium</h3>
+      <div class="sim-note">This is a transparent heuristic model for scenario planning. It should support discussion, not replace causal policy evaluation.</div>
+      <div class="sim-metric-grid">
+        <div class="sim-metric"><div class="label">Total Pressure</div><span class="value">${escapeHtml(result.total_projected)}</span></div>
+        <div class="sim-metric"><div class="label">Balance Index</div><span class="value">${escapeHtml(result.balance_projected)}%</span></div>
+        <div class="sim-metric"><div class="label">Dominant Domain</div><span class="value">${escapeHtml(result.strongest_projected.domain)}</span></div>
+        <div class="sim-metric"><div class="label">Redistributed</div><span class="value">${escapeHtml(result.redistributed_pressure)}</span></div>
+      </div>
+      ${renderSimulationChart(result)}
+      <div class="sim-warning"><strong>Policy consequence reading:</strong> ${escapeHtml(simulationConsequenceText(result))}<br><br><strong>Redistribution reading:</strong> ${escapeHtml(simulationRedistributionText(result))}</div>
+      <div class="table-wrap" style="margin-top:1rem">
+        <table class="sim-table">
+          <thead><tr><th>Domain</th><th>Baseline</th><th>Projected</th><th>Change</th><th>Support</th><th>Shock</th></tr></thead>
+          <tbody>
+            ${result.rows.map(row => `<tr>
+              <td><span class="tag ${DOMAIN_CLASS[row.domain] || ''}">${escapeHtml(row.domain)}</span></td>
+              <td>${escapeHtml(chartNumber(row.baseline, 2))}</td>
+              <td>${escapeHtml(chartNumber(row.projected, 2))}</td>
+              <td>${row.change > 0 ? '+' : ''}${escapeHtml(chartNumber(row.change, 2))}</td>
+              <td>${escapeHtml(row.relief)}%</td>
+              <td>${escapeHtml(row.shock)}%</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>`;
+  mount.innerHTML = html;
+}
+
+function updateSimulationControl(kind, key, value) {
+  const numeric = parseInt(value, 10) || 0;
+  if (kind === 'relief' || kind === 'shock') {
+    simulationState[kind][key] = numeric;
+  } else {
+    simulationState[key] = numeric;
+  }
+  renderSimulator();
+}
+
+function resetSimulation() {
+  simulationState = cloneSimulationDefaults();
+  renderSimulator();
+}
+
+function buildSimulationReportText() {
+  const layer = buildInterpretiveLayer();
+  if (!layer) return '';
+  const result = simulateEquilibrium(layer, simulationState);
+  const lines = [];
+  lines.push('CIPQ Scenario-Based Equilibrium Simulation');
+  lines.push(`Generated: ${new Date().toISOString()}`);
+  lines.push('');
+  lines.push('Model Note');
+  lines.push('This is a heuristic scenario simulator. It estimates pressure redistribution and ecosystem balance from coded CIPQ weighted pressure; it is not a causal forecast.');
+  lines.push('');
+  lines.push('Scenario Controls');
+  VALID_DOMAINS.forEach(domain => {
+    lines.push(`- ${domain}: support ${simulationState.relief[domain]}%, shock ${simulationState.shock[domain]}%`);
+  });
+  lines.push(`- Redistribution sensitivity: ${simulationState.redistribution}%`);
+  lines.push(`- Balancing strength: ${simulationState.balancing}%`);
+  lines.push(`- Adjustment rounds: ${simulationState.rounds}`);
+  lines.push('');
+  lines.push('Projected Results');
+  lines.push(`- Total pressure: ${result.total_baseline} -> ${result.total_projected}`);
+  lines.push(`- Balance index: ${result.balance_baseline}% -> ${result.balance_projected}%`);
+  lines.push(`- Dominant pressure: ${result.strongest_baseline.domain} -> ${result.strongest_projected.domain}`);
+  lines.push(`- Redistributed pressure: ${result.redistributed_pressure}`);
+  lines.push('');
+  lines.push('Domain Table');
+  result.rows.forEach(row => {
+    lines.push(`- ${row.domain}: baseline ${row.baseline}, projected ${row.projected}, change ${row.change > 0 ? '+' : ''}${row.change}`);
+  });
+  lines.push('');
+  lines.push(simulationConsequenceText(result));
+  lines.push(simulationRedistributionText(result));
+  return lines.join('\r\n');
+}
+
+function downloadSimulationReport() {
+  const text = buildSimulationReportText();
+  if (!text) {
+    showStatus('No simulation data to export yet.', true);
+    return;
+  }
+  downloadBlob(`CIPQ_Scenario_Simulation_${reportDateStamp()}.txt`, text, 'text/plain;charset=utf-8');
+}
+
+function downloadClientReport() {
+  const layer = buildInterpretiveLayer();
+  if (!layer) {
+    showStatus('No data to export yet.', true);
+    return;
+  }
+
+  downloadBlob(`CIPQ_Client_Report_${reportDateStamp()}.doc`, `\ufeff${buildClientReportWordHtml(layer)}`, 'application/msword;charset=utf-8');
+}
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch (error) {
+      // Fall back for local file usage where the Clipboard API may be blocked.
+    }
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  textarea.remove();
+}
+
+async function copyClientReport() {
+  const layer = buildInterpretiveLayer();
+  if (!layer) {
+    showStatus('No report to copy yet.', true);
+    return;
+  }
+
+  try {
+    await copyTextToClipboard(buildClientReportText(layer));
+    showStatus('Client report copied to clipboard.', false);
+  } catch (error) {
+    showStatus(`Could not copy report: ${error.message || error}`, true);
+  }
 }
 
 function renderConfidencePill(label) {
@@ -2246,6 +3452,9 @@ function renderDashboard() {
   const stakeholderCount = countDistinct(dataset.map(record => record.Stakeholder));
   const regionCount = countDistinct(dataset.map(record => record.Region));
   const sourceCount = countDistinct(dataset.map(record => record.Source_Type));
+  const valueChainCount = dataset.filter(record => record.Value_Chain_Stage).length;
+  const valueChainAnalysisCount = dataset.filter(record => valueChainStageForAnalysis(record)).length;
+  const pestleCount = dataset.filter(record => record.PESTLE_Tags?.length).length;
 
   let html = renderValidationNotice(layer);
   html += `<div class="index-hero">
@@ -2263,6 +3472,7 @@ function renderDashboard() {
       <div style="margin-top:0.3rem">${layer.aggregates.indicator_stats.length} indicators active</div>
       <div style="margin-top:0.3rem">${stakeholderCount} stakeholder groups</div>
       <div style="margin-top:0.3rem">${regionCount} regions | ${sourceCount} source types</div>
+      <div style="margin-top:0.3rem">${valueChainAnalysisCount} value chain analyzed (${valueChainCount} explicit) | ${pestleCount} PESTLE tagged</div>
     </div>
   </div>`;
 
@@ -2289,6 +3499,8 @@ function renderDashboard() {
         <p>${escapeHtml(layer.chart_explanations.stakeholder_comparison_chart.text)}</p>
       </div>
     </div>`;
+
+  html += renderChartVisualizations(layer);
 
   html += `<div class="section-title">Quadrant Summary Cards <span>Frequency, severity, narrative, and evidence</span></div>
     <div class="insight-grid">`;
@@ -2657,6 +3869,7 @@ function refreshAll() {
   if (activePanel.id === 'tab-indicators') renderIndicators();
   if (activePanel.id === 'tab-comparison') renderComparison();
   if (activePanel.id === 'tab-priority') renderPriority();
+  if (activePanel.id === 'tab-simulator') renderSimulator();
   if (activePanel.id === 'tab-dataset') renderDataset();
 }
 
@@ -2671,8 +3884,15 @@ Object.assign(window, {
   addSegment,
   handleFileUpload,
   exportCSV,
+  exportSummaryTablesCsv,
+  downloadImportTemplate,
+  downloadChartPack,
   exportInterpretiveJson,
   downloadClientReport,
+  copyClientReport,
+  updateSimulationControl,
+  resetSimulation,
+  downloadSimulationReport,
   openIndicatorTrace,
   closeIndicatorTrace,
   deleteSegment,
