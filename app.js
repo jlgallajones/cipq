@@ -68,6 +68,57 @@ let currentUser = null;
 let isCloudSyncing = false;
 const unavailableSupabaseColumns = new Set();
 
+// Returns true if the current user can write (add/edit/delete) segments.
+function canWrite() {
+  return !!currentUser;
+}
+
+// Enforce write-only access: show a status message and abort if not logged in.
+function requireAuth(action = 'perform this action') {
+  if (!canWrite()) {
+    showStatus(`You must be signed in to ${action}. Use the sign-in form in Analyst View.`, true);
+    return false;
+  }
+  return true;
+}
+
+// Load all public segments for guest users (anon read via RLS policy).
+async function loadPublicSegmentsForGuest() {
+  if (!supabaseClient) {
+    dataset = [];
+    expandedSnippetIds.clear();
+    refreshAll();
+    return;
+  }
+  setCloudSyncing(true);
+  let data = null;
+  let error = null;
+  try {
+    const result = await supabaseClient
+      .from(SUPABASE_TABLE)
+      .select('*')
+      .order('created_at', { ascending: true, nullsFirst: true })
+      .order('encoded_at', { ascending: true, nullsFirst: true })
+      .order('segment_id', { ascending: true });
+    data = result.data;
+    error = result.error;
+  } catch (fetchError) {
+    error = fetchError;
+  }
+  setCloudSyncing(false);
+  if (error) {
+    // Silently fail for guests — no segments to show is acceptable
+    dataset = [];
+    expandedSnippetIds.clear();
+    refreshAll();
+    return;
+  }
+  dataset = (data || []).map(mapDbRowToSegment);
+  expandedSnippetIds.clear();
+  refreshAll();
+  if (dataset.length) showStatus(`Viewing ${dataset.length} published segment${dataset.length !== 1 ? 's' : ''} (read-only). Sign in to encode.`, false);
+}
+
 const CODEBOOK = {
   Creation: [
     {
@@ -887,52 +938,123 @@ function setCloudSyncing(syncing) {
   renderAuthUI();
 }
 
+// Locks or unlocks the Analyst View button and encoder tabs based on auth state.
+// Guests are forced into Client View and the Analyst View button is hidden.
+function enforceGuestView() {
+  const encoderBtn = document.getElementById('encoderViewBtn');
+  const viewSwitchNote = document.querySelector('.view-switch-note');
+  const guestBanner = document.getElementById('guestBanner');
+  if (!encoderBtn) return;
+
+  if (!currentUser) {
+    // Hide the Analyst View toggle button for guests
+    encoderBtn.style.display = 'none';
+    if (viewSwitchNote) viewSwitchNote.textContent = 'Sign in to access Analyst View and encode segments.';
+    if (guestBanner) guestBanner.style.display = 'block';
+    // Force client view
+    if (activeView === 'encoder') setAppView('client');
+  } else {
+    encoderBtn.style.display = '';
+    if (viewSwitchNote) viewSwitchNote.textContent = 'Analyst View keeps coding, validation, and dataset management together. Client View keeps CIPQ analytics central while adding lightweight Value Chain and PESTLE context for reporting.';
+    if (guestBanner) guestBanner.style.display = 'none';
+  }
+}
+
 function renderAuthUI() {
-  const pill = document.getElementById('authStatePill');
-  const email = document.getElementById('authUserEmail');
-  const note = document.getElementById('authSyncNote');
-  const loginBtn = document.getElementById('authLoginBtn');
-  const signupBtn = document.getElementById('authSignupBtn');
-  const logoutBtn = document.getElementById('authLogoutBtn');
-  const emailInput = document.getElementById('auth_email');
+  const loginBtn      = document.getElementById('authLoginBtn');
+  const emailInput    = document.getElementById('auth_email');
   const passwordInput = document.getElementById('auth_password');
-  if (!pill || !email || !note || !loginBtn || !signupBtn || !logoutBtn || !emailInput || !passwordInput) return;
+  const signInBtn     = document.getElementById('authOpenModalBtn');
+  const userBadge     = document.getElementById('userBadge');
+  const badgeDot      = document.getElementById('userBadgeDot');
+  const badgeEmail    = document.getElementById('userBadgeEmail');
+  const dropdownEmail = document.getElementById('dropdownEmail');
+  const dropdownNote  = document.getElementById('dropdownNote');
 
   const authInputsDisabled = !supabaseReady || isCloudSyncing;
-  emailInput.disabled = authInputsDisabled || !!currentUser;
-  passwordInput.disabled = authInputsDisabled || !!currentUser;
-  loginBtn.disabled = authInputsDisabled || !!currentUser;
-  signupBtn.disabled = authInputsDisabled || !!currentUser;
-  logoutBtn.disabled = !supabaseReady || isCloudSyncing || !currentUser;
-
-  pill.className = 'auth-state-pill';
-  if (!supabaseReady) {
-    pill.textContent = 'Local Only';
-    email.textContent = 'Supabase not configured';
-    note.textContent = 'Add your Supabase URL and anon key, then run the updated supabase_schema.sql before using cloud sync.';
-    return;
-  }
+  if (loginBtn)      loginBtn.disabled      = authInputsDisabled;
+  if (emailInput)    emailInput.disabled    = authInputsDisabled || !!currentUser;
+  if (passwordInput) passwordInput.disabled = authInputsDisabled || !!currentUser;
 
   if (isCloudSyncing) {
-    pill.textContent = 'Syncing';
-    pill.classList.add('syncing');
-    email.textContent = currentUser?.email || 'Preparing workspace';
-    note.textContent = 'Syncing your encoded segment history from Supabase.';
+    if (signInBtn)  signInBtn.style.display  = 'none';
+    if (userBadge)  userBadge.style.display  = 'flex';
+    if (badgeDot)   badgeDot.className       = 'badge-dot syncing';
+    if (badgeEmail) badgeEmail.textContent   = 'Syncing…';
     return;
   }
 
   if (currentUser) {
-    pill.textContent = 'Cloud Sync On';
-    pill.classList.add('connected');
-    email.textContent = currentUser.email || 'Signed in';
-    note.textContent = `Signed in. ${dataset.length} segment${dataset.length !== 1 ? 's' : ''} currently loaded from cloud storage.`;
+    if (signInBtn)      signInBtn.style.display  = 'none';
+    if (userBadge)      userBadge.style.display  = 'flex';
+    if (badgeDot)       badgeDot.className        = 'badge-dot';
+    if (badgeEmail)     badgeEmail.textContent    = currentUser.email || 'Signed in';
+    if (dropdownEmail)  dropdownEmail.textContent = currentUser.email || '';
+    if (dropdownNote)   dropdownNote.textContent  = `${dataset.length} segment${dataset.length !== 1 ? 's' : ''} loaded`;
+    // Close the login modal if it's open
+    const modal = document.getElementById('loginModal');
+    if (modal) modal.classList.remove('open');
     return;
   }
 
-  pill.textContent = 'Ready To Sign In';
-  email.textContent = 'No active user session';
-  note.textContent = 'Sign in or create an account to save segment history to Supabase. Until then, changes stay only in this browser session.';
+  // Guest / signed-out state
+  if (signInBtn) signInBtn.style.display = '';
+  if (userBadge) userBadge.style.display = 'none';
+  // Close dropdown if open
+  const dd = document.getElementById('userDropdown');
+  if (dd) dd.classList.remove('open');
 }
+
+function openLoginModal() {
+  const modal = document.getElementById('loginModal');
+  if (!modal) return;
+  modal.classList.add('open');
+  // Clear any previous error
+  const err = document.getElementById('loginModalError');
+  if (err) { err.style.display = 'none'; err.textContent = ''; }
+  // Focus email field
+  setTimeout(() => {
+    const e = document.getElementById('auth_email');
+    if (e && !e.disabled) e.focus();
+  }, 80);
+}
+
+function closeLoginModal() {
+  const modal = document.getElementById('loginModal');
+  if (modal) modal.classList.remove('open');
+}
+
+function toggleUserDropdown() {
+  const dd = document.getElementById('userDropdown');
+  if (dd) dd.classList.toggle('open');
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  const badge = document.getElementById('userBadge');
+  const dd = document.getElementById('userDropdown');
+  if (dd && dd.classList.contains('open') && badge && !badge.contains(e.target)) {
+    dd.classList.remove('open');
+  }
+  // Close login modal on backdrop click
+  const modal = document.getElementById('loginModal');
+  if (modal && modal.classList.contains('open') && e.target === modal) {
+    closeLoginModal();
+  }
+});
+
+// Submit login on Enter key
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    closeLoginModal();
+    const dd = document.getElementById('userDropdown');
+    if (dd) dd.classList.remove('open');
+  }
+  if (e.key === 'Enter') {
+    const modal = document.getElementById('loginModal');
+    if (modal && modal.classList.contains('open')) signInUser();
+  }
+});
 
 async function loadSegmentsFromSupabase(options = {}) {
   if (!supabaseClient || !currentUser) {
@@ -977,21 +1099,31 @@ async function handleSessionChange(session, options = {}) {
   currentUser = session?.user || null;
 
   if (!currentUser) {
+    // Guest mode: clear local dataset and load public read-only data
     dataset = [];
     expandedSnippetIds.clear();
-    refreshAll();
+    // Force client view for guests — no write access
+    enforceGuestView();
     renderAuthUI();
-    if (!options.silent) showStatus('Signed out. Local browser memory is now empty.', false);
+    if (!options.silent) showStatus('Signed out. Viewing published segments in read-only mode.', false);
+    await loadPublicSegmentsForGuest();
     return;
   }
 
+  // Logged-in: restore analyst view availability
+  enforceGuestView();
   renderAuthUI();
   await loadSegmentsFromSupabase({ silent: !!options.silent });
 }
 
 async function initializeAuth() {
   renderAuthUI();
-  if (!supabaseClient) return;
+  enforceGuestView();
+
+  if (!supabaseClient) {
+    // No Supabase configured — nothing to load, just enforce guest view
+    return;
+  }
 
   let data = null;
   let error = null;
@@ -1004,6 +1136,7 @@ async function initializeAuth() {
   }
   if (error) {
     showStatus(`Could not restore session: ${formatSupabaseError(error)}`, true);
+    await loadPublicSegmentsForGuest();
     return;
   }
 
@@ -1017,54 +1150,19 @@ async function initializeAuth() {
   }
 }
 
-async function signUpUser() {
-  if (!supabaseClient) {
-    showStatus('Supabase is not configured yet.', true);
-    return;
-  }
-  const { email, password } = authCredentials();
-  if (!email || !password) {
-    showStatus('Enter both email and password to create an account.', true);
-    return;
-  }
-
-  setCloudSyncing(true);
-  let data = null;
-  let error = null;
-  try {
-    const result = await supabaseClient.auth.signUp({ email, password });
-    data = result.data;
-    error = result.error;
-  } catch (fetchError) {
-    error = fetchError;
-  }
-  setCloudSyncing(false);
-  if (error) {
-    showStatus(formatSupabaseError(error), true);
-    return;
-  }
-
-  clearAuthForm();
-  renderAuthUI();
-  if (data?.session) {
-    await handleSessionChange(data.session, { silent: true });
-    showStatus('Account created and signed in. Cloud-backed history is ready.', false);
-    return;
-  }
-
-  showStatus('Account created. Check your inbox if email confirmation is enabled, then sign in.', false);
-}
-
 async function signInUser() {
   if (!supabaseClient) {
-    showStatus('Supabase is not configured yet.', true);
+    showLoginModalError('Supabase is not configured yet.');
     return;
   }
   const { email, password } = authCredentials();
   if (!email || !password) {
-    showStatus('Enter both email and password to sign in.', true);
+    showLoginModalError('Enter both email and password to sign in.');
     return;
   }
+
+  const loginBtn = document.getElementById('authLoginBtn');
+  if (loginBtn) { loginBtn.disabled = true; loginBtn.textContent = 'Signing in…'; }
 
   setCloudSyncing(true);
   let data = null;
@@ -1077,14 +1175,23 @@ async function signInUser() {
     error = fetchError;
   }
   setCloudSyncing(false);
+
+  if (loginBtn) { loginBtn.disabled = false; loginBtn.textContent = 'Sign In'; }
+
   if (error) {
-    showStatus(formatSupabaseError(error), true);
+    showLoginModalError(formatSupabaseError(error));
     return;
   }
 
   clearAuthForm();
+  closeLoginModal();
   await handleSessionChange(data.session, { silent: true });
-  showStatus('Logged in. Saved segment history reloaded from Supabase.', false);
+  showStatus('Signed in. Segment history loaded from cloud.', false);
+}
+
+function showLoginModalError(msg) {
+  const err = document.getElementById('loginModalError');
+  if (err) { err.textContent = msg; err.style.display = 'block'; }
 }
 
 async function signOutUser() {
@@ -1148,6 +1255,8 @@ function switchTab(name, btn = null) {
   if (name === 'simulator') renderSimulator();
   if (name === 'dataset') renderDataset();
   if (name === 'entry') renderEntryPreview();
+  if (name === 'survey') { if (window.renderSurveyClient) window.renderSurveyClient(); }
+  if (name === 'survey-analyst') { if (window.renderSurveyAnalyst) window.renderSurveyAnalyst(); }
 }
 
 function setSeverity(value) {
@@ -1201,6 +1310,7 @@ function clearForm() {
 }
 
 async function addSegment() {
+  if (!requireAuth('add segments')) return;
   const themeCode = document.getElementById('f_theme_code').value;
   const theme = THEME_INDEX[themeCode];
   const indicatorCode = document.getElementById('f_indicator').value;
@@ -1290,6 +1400,10 @@ function updateUploadMeta(filename = 'No file uploaded yet', success = false) {
 }
 
 function handleFileUpload(event) {
+  if (!requireAuth('import segments')) {
+    event.target.value = '';
+    return;
+  }
   if (event.target.files[0]) {
     updateUploadMeta(event.target.files[0].name, false);
     parseCSV(event.target.files[0]);
@@ -3336,7 +3450,7 @@ function renderEntryPreview() {
       <td><span class="ds-cell-text">${escapeHtml(record.Stakeholder || '-')}</span></td>
       <td><span class="ds-cell-text">${escapeHtml(record.Value_Chain_Stage || '-')}</span></td>
       <td><span class="ds-cell-text">${escapeHtml(sourceLabel || '-')}</span></td>
-      <td><button class="btn btn-secondary ds-delete-btn" type="button" onclick="deleteSegment('${record.Segment_ID}')">Delete</button></td>
+      <td>${canWrite() ? `<button class="btn btn-secondary ds-delete-btn" type="button" onclick="deleteSegment('${record.Segment_ID}')">Delete</button>` : ''}</td>
     </tr>`;
   });
 
@@ -3345,6 +3459,7 @@ function renderEntryPreview() {
 }
 
 async function deleteSegment(id) {
+  if (!requireAuth('delete segments')) return;
   const target = dataset.find(record => record.Segment_ID === id);
   if (!target) return;
 
@@ -3371,6 +3486,7 @@ function toggleDatasetSnippet(id) {
 }
 
 async function clearAllSegments() {
+  if (!requireAuth('clear all segments')) return;
   if (!dataset.length) {
     showStatus('No segments to clear.', true);
     return;
@@ -3799,7 +3915,7 @@ function renderDataset() {
           <th>PESTLE</th>
           <th>Region</th>
           <th>Confidence</th>
-          <th></th>
+          ${canWrite() ? '<th></th>' : ''}
         </tr>
       </thead>
       <tbody>`;
@@ -3838,7 +3954,7 @@ function renderDataset() {
       <td><span class="ds-cell-text">${escapeHtml((record.PESTLE_Tags || []).join(', ') || '-')}</span></td>
       <td><span class="ds-cell-text">${escapeHtml(record.Region || '-')}</span></td>
       <td>${renderConfidencePill(record.Scoring_Confidence || 'medium')}</td>
-      <td><button class="btn btn-secondary ds-delete-btn" type="button" onclick="deleteSegment('${record.Segment_ID}')">Delete</button></td>
+      <td>${canWrite() ? `<button class="btn btn-secondary ds-delete-btn" type="button" onclick="deleteSegment('${record.Segment_ID}')">Delete</button>` : ''}</td>
     </tr>`;
   });
 
@@ -3899,8 +4015,12 @@ Object.assign(window, {
   toggleDatasetSnippet,
   clearAllSegments,
   signInUser,
-  signUpUser,
-  signOutUser
+  signOutUser,
+  openLoginModal,
+  closeLoginModal,
+  toggleUserDropdown,
+  enforceGuestView,
+  canWrite
 });
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -3922,4 +4042,5 @@ window.addEventListener('DOMContentLoaded', () => {
   });
   initializeAuth();
   setAppView('client');
+  if (window.loadSurveyData) window.loadSurveyData();
 });

@@ -52,7 +52,7 @@
     padding: 2rem 2.5rem 1.5rem;
     border-bottom: 4px solid var(--gold);
     position: relative;
-    overflow: hidden;
+    overflow: visible;
   }
   header::before {
     content: 'CIPQ';
@@ -65,6 +65,8 @@
     color: rgba(255,255,255,0.04);
     pointer-events: none;
     line-height: 1;
+    overflow: hidden;
+    max-width: 100%;
   }
   header h1 {
     font-family: 'Playfair Display', serif;
@@ -288,50 +290,220 @@
     flex-wrap: wrap;
   }
 
-  .auth-shell {
-    background: linear-gradient(135deg, rgba(201, 153, 58, 0.12), rgba(42, 107, 110, 0.08));
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 1.5rem;
-    margin-bottom: 2rem;
-    display: grid;
-    grid-template-columns: minmax(0, 1.35fr) minmax(320px, 1fr);
-    gap: 1.5rem;
-    align-items: start;
+  /* ── Auth button in header ── */
+  .auth-header-btn {
+    position: absolute;
+    top: 1.25rem;
+    right: 2rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
   }
-  .auth-summary,
-  .auth-form-card {
-    background: rgba(255,255,255,0.88);
-    border: 1px solid rgba(200, 191, 174, 0.9);
-    border-radius: 12px;
-    padding: 1.5rem;
-    box-shadow: var(--shadow);
-  }
-  .auth-kicker {
+  .auth-header-btn .auth-sign-in-btn {
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.68rem;
-    color: var(--muted);
+    font-size: 0.72rem;
+    letter-spacing: 0.07em;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
-    margin-bottom: 0.45rem;
+    padding: 0.5rem 1.25rem;
+    border-radius: 999px;
+    border: 2px solid var(--gold);
+    background: var(--gold);
+    color: #1a1a2e;
+    cursor: pointer;
+    font-weight: 700;
+    transition: background 0.18s, color 0.18s, transform 0.1s;
+    box-shadow: 0 2px 12px rgba(201,153,58,0.45);
   }
-  .auth-summary h2 {
-    font-family: 'Playfair Display', serif;
-    font-size: clamp(1.15rem, 3vw, 1.45rem);
-    line-height: 1.2;
-    margin-bottom: 0.45rem;
+  .auth-header-btn .auth-sign-in-btn:hover {
+    background: #fff;
+    border-color: #fff;
+    color: #1a1a2e;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 18px rgba(255,255,255,0.25);
   }
-  .auth-summary p {
+  .auth-user-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    background: rgba(255,255,255,0.85);
+    border: 1.5px solid var(--border);
+    border-radius: 999px;
+    padding: 0.35rem 0.9rem 0.35rem 0.55rem;
+    cursor: pointer;
+    position: relative;
+    transition: border-color 0.18s;
+  }
+  .auth-user-badge:hover { border-color: var(--gold); }
+  .auth-user-badge .badge-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--access);
+    flex-shrink: 0;
+  }
+  .auth-user-badge .badge-dot.syncing { background: var(--distribution); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .auth-user-badge .badge-email {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--ink);
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .auth-user-badge .badge-arrow {
+    font-size: 0.6rem;
     color: var(--muted);
-    font-size: 0.92rem;
-    max-width: 60ch;
+    margin-left: 0.1rem;
   }
-  .auth-meta {
+  .auth-badge-dropdown {
+    display: none;
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 8px 28px rgba(26,26,46,0.12);
+    min-width: 220px;
+    z-index: 500;
+    overflow: hidden;
+  }
+  .auth-badge-dropdown.open { display: block; }
+  .auth-badge-dropdown .dropdown-header {
+    padding: 0.85rem 1rem 0.6rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .auth-badge-dropdown .dropdown-header .dh-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.63rem;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--muted);
+  }
+  .auth-badge-dropdown .dropdown-header .dh-email {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--ink);
+    margin-top: 0.2rem;
+    word-break: break-all;
+  }
+  .auth-badge-dropdown .dropdown-header .dh-note {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.67rem;
+    color: var(--muted);
+    margin-top: 0.25rem;
+  }
+  .auth-badge-dropdown .dropdown-signout {
+    display: block;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    text-align: left;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    color: #c0392b;
+    background: none;
+    border: none;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+  }
+  .auth-badge-dropdown .dropdown-signout:hover { background: #fff5f5; }
+
+  /* ── Login modal ── */
+  .login-modal-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(26,26,46,0.45);
+    backdrop-filter: blur(3px);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+  .login-modal-backdrop.open { display: flex; }
+  .login-modal-card {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 24px 64px rgba(26,26,46,0.18);
+    width: min(420px, 92vw);
+    overflow: hidden;
+    animation: modalIn 0.22s ease;
+  }
+  @keyframes modalIn {
+    from { opacity: 0; transform: translateY(-16px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .login-modal-header {
+    background: linear-gradient(135deg, rgba(201,153,58,0.14), rgba(42,107,110,0.08));
+    padding: 1.6rem 1.75rem 1.2rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .login-modal-header .lm-kicker {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    margin-bottom: 0.35rem;
+  }
+  .login-modal-header h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.25rem;
+    line-height: 1.2;
+    margin: 0;
+  }
+  .login-modal-body {
+    padding: 1.5rem 1.75rem 1.75rem;
+  }
+  .login-modal-body .form-group {
+    margin-bottom: 1rem;
+  }
+  .login-modal-body .form-group label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--muted);
+    display: block;
+    margin-bottom: 0.4rem;
+  }
+  .login-modal-body .form-group input {
+    width: 100%;
+    padding: 0.6rem 0.85rem;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--ink);
+    background: var(--cream);
+    box-sizing: border-box;
+    transition: border-color 0.15s;
+  }
+  .login-modal-body .form-group input:focus {
+    outline: none;
+    border-color: var(--gold);
+    background: #fff;
+  }
+  .login-modal-actions {
     display: flex;
     gap: 0.65rem;
-    flex-wrap: wrap;
-    align-items: center;
-    margin-top: 0.95rem;
+    margin-top: 1.25rem;
+  }
+  .login-modal-actions .btn { flex: 1; }
+  .login-modal-close {
+    position: absolute;
+    top: 1rem; right: 1rem;
+    background: none; border: none;
+    font-size: 1.2rem; color: var(--muted);
+    cursor: pointer; line-height: 1;
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+  }
+  .login-modal-close:hover { color: var(--ink); }
+  .login-modal-card input[disabled],
+  .login-modal-card button[disabled] {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
   .auth-state-pill {
     display: inline-flex;
@@ -355,39 +527,6 @@
     background: #e6f0f0;
     color: var(--distribution);
     border-color: rgba(42,107,110,0.18);
-  }
-  .auth-user-email {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.76rem;
-    color: var(--ink);
-    word-break: break-word;
-  }
-  .auth-note,
-  .auth-footnote {
-    margin-top: 0.8rem;
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.72rem;
-    color: var(--muted);
-    line-height: 1.6;
-  }
-  .auth-form-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.8rem;
-  }
-  .auth-actions {
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    margin-top: 0.9rem;
-  }
-  .auth-actions .btn {
-    flex: 1 1 150px;
-  }
-  .auth-form-card input[disabled],
-  .auth-form-card button[disabled] {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .section-title {
@@ -1385,12 +1524,12 @@
   }
 
   @media (max-width: 900px) {
-    .auth-shell {
-      grid-template-columns: 1fr;
+    .auth-header-btn {
+      top: 0.85rem;
+      right: 1rem;
     }
-
-    .auth-form-grid {
-      grid-template-columns: 1fr;
+    .auth-user-badge .badge-email {
+      max-width: 110px;
     }
 
     .pipeline-strip {
@@ -1528,9 +1667,27 @@
 </head>
 <body>
 
-<header>
+<header style="position:relative;">
   <h1>Creative Industry Policy Quadrant<br>Analytical System</h1>
   <p>Philippine Book Publishing Industry Analysis</p>
+
+  <!-- Auth button — guest shows Sign In, logged-in shows user badge -->
+  <div class="auth-header-btn" id="authHeaderBtn">
+    <button class="auth-sign-in-btn" id="authOpenModalBtn" type="button" onclick="openLoginModal()">Sign In</button>
+    <div class="auth-user-badge" id="userBadge" onclick="toggleUserDropdown()" style="display:none;">
+      <span class="badge-dot" id="userBadgeDot"></span>
+      <span class="badge-email" id="userBadgeEmail"></span>
+      <span class="badge-arrow">▾</span>
+      <div class="auth-badge-dropdown" id="userDropdown">
+        <div class="dropdown-header">
+          <div class="dh-label">Signed in as</div>
+          <div class="dh-email" id="dropdownEmail"></div>
+          <div class="dh-note" id="dropdownNote"></div>
+        </div>
+        <button class="dropdown-signout" type="button" onclick="event.stopPropagation(); signOutUser()">Sign Out</button>
+      </div>
+    </div>
+  </div>
 </header>
 
 <section class="view-switch">
@@ -1541,6 +1698,10 @@
   <div class="view-switch-note">Analyst View keeps coding, validation, and dataset management together. Client View keeps CIPQ analytics central while adding lightweight Value Chain and PESTLE context for reporting.</div>
 </section>
 
+<div id="guestBanner" style="display:none; background:var(--gold); color:var(--ink); padding:0.65rem 2rem; font-family:'IBM Plex Mono',monospace; font-size:0.76rem; letter-spacing:0.05em; border-bottom:2px solid rgba(26,26,46,0.15);">
+  👁 Read-only mode — you are viewing published segments. <strong><button type="button" onclick="openLoginModal()" style="background:none;border:none;font:inherit;font-weight:700;text-decoration:underline;cursor:pointer;padding:0;color:inherit;">Sign in</button></strong> to encode, import, and manage data.
+</div>
+
 <nav id="mainNav">
   <button data-tab="entry" data-view="encoder" onclick="switchTab('entry', this)">01 · Analyst Entry</button>
   <button class="active" data-tab="dashboard" data-view="client" onclick="switchTab('dashboard', this)">01 · Client Dashboard</button>
@@ -1548,7 +1709,9 @@
   <button data-tab="comparison" data-view="client" onclick="switchTab('comparison', this)">03 · Perspectives</button>
   <button data-tab="priority" data-view="client" onclick="switchTab('priority', this)">04 · Policy Signals</button>
   <button data-tab="simulator" data-view="client" onclick="switchTab('simulator', this)">05 · Simulator</button>
+  <button data-tab="survey" data-view="client" onclick="switchTab('survey', this)">06 · Survey</button>
   <button data-tab="dataset" data-view="encoder" onclick="switchTab('dataset', this)">02 · Encoded Dataset</button>
+  <button data-tab="survey-analyst" data-view="encoder" onclick="switchTab('survey-analyst', this)">03 · Survey Data</button>
 </nav>
 
 <main>
@@ -1568,34 +1731,31 @@
     </div>
   </div>
 
-  <section class="auth-shell">
-    <div class="auth-summary">
-      <div class="auth-kicker">Persistent Workspace</div>
-      <h2>Sign in to save and reload your encoded segment history</h2>
-      <div class="auth-meta">
-        <span class="auth-state-pill" id="authStatePill">Local Only</span>
-        <span class="auth-user-email" id="authUserEmail">Not signed in</span>
+  <!-- Login modal -->
+  <div class="login-modal-backdrop" id="loginModal" role="dialog" aria-modal="true" aria-labelledby="loginModalTitle">
+    <div class="login-modal-card" style="position:relative;">
+      <button class="login-modal-close" type="button" onclick="closeLoginModal()" aria-label="Close">✕</button>
+      <div class="login-modal-header">
+        <div class="lm-kicker">Analyst Access</div>
+        <h2 id="loginModalTitle">Sign in to your workspace</h2>
       </div>
-      <div class="auth-note" id="authSyncNote">You can work locally without signing in. Cloud sync becomes available after the Supabase schema is updated to the richer CIPQ record structure.</div>
-    </div>
-    <div class="auth-form-card">
-      <div class="auth-form-grid">
+      <div class="login-modal-body">
         <div class="form-group">
           <label>Email</label>
           <input type="email" id="auth_email" placeholder="name@example.com" autocomplete="email">
         </div>
         <div class="form-group">
           <label>Password</label>
-          <input type="password" id="auth_password" placeholder="At least 6 characters" autocomplete="current-password">
+          <input type="password" id="auth_password" placeholder="Password" autocomplete="current-password">
+        </div>
+        <div id="loginModalError" style="display:none; font-family:'IBM Plex Mono',monospace; font-size:0.73rem; color:#c0392b; margin-top:0.5rem;"></div>
+        <div class="login-modal-actions">
+          <button class="btn btn-primary" id="authLoginBtn" type="button" onclick="signInUser()">Sign In</button>
+          <button class="btn btn-secondary" id="authCancelBtn" type="button" onclick="closeLoginModal()">Cancel</button>
         </div>
       </div>
-      <div class="auth-actions">
-        <button class="btn btn-primary" id="authLoginBtn" type="button" onclick="signInUser()">Log In</button>
-        <button class="btn btn-secondary" id="authSignupBtn" type="button" onclick="signUpUser()">Create Account</button>
-        <button class="btn btn-secondary" id="authLogoutBtn" type="button" onclick="signOutUser()">Log Out</button>
-      </div>
     </div>
-  </section>
+  </div>
 
   <div id="tab-entry" class="tab-panel" data-view="encoder">
     <div class="section-title">Analyst Workspace <span>Controlled coding with validation</span></div>
@@ -1919,8 +2079,43 @@
     </div>
   </div>
 
+  <!-- ── Survey Analytics (Client View) ─────────────────────────────────── -->
+  <div id="tab-survey" class="tab-panel" data-view="client">
+    <div class="section-title">Survey Analytics <span>Likert-scale quantitative perception data — parallel to CIPQ, not integrated</span></div>
+    <div class="dashboard-actions">
+      <button class="btn btn-secondary" type="button" onclick="exportSurveyCSV()">Export Responses CSV</button>
+      <button class="btn btn-secondary" type="button" onclick="exportSurveySummaryCSV()">Export Summary CSV</button>
+    </div>
+    <div id="surveyClientContent">
+      <div class="no-data-msg">No survey data yet. Import responses in Analyst View → Survey Data.</div>
+    </div>
+  </div>
+
+  <!-- ── Survey Data Entry (Analyst View) ────────────────────────────────── -->
+  <div id="tab-survey-analyst" class="tab-panel" data-view="encoder">
+    <div class="section-title">Survey Data Management <span>Import, define questions, enter responses</span></div>
+    <div class="dashboard-actions">
+      <div class="upload-area" id="surveyUploadZone" style="margin-bottom:0;padding:1.5rem 2rem;text-align:left;display:flex;align-items:center;gap:1.5rem;cursor:pointer;" onclick="document.getElementById('surveyFileInput').click()">
+        <span class="icon" style="font-size:1.6rem;margin:0;">CSV</span>
+        <div>
+          <h3 style="font-size:1rem;margin-bottom:0.2rem;">Import Survey Responses</h3>
+          <p style="font-size:0.8rem;">CSV with columns: respondent_id, respondent_group, region, source_id, then one column per question code (values 1–5).</p>
+        </div>
+        <input type="file" id="surveyFileInput" accept=".csv" onchange="handleSurveyImport(event)" style="display:none;">
+      </div>
+      <button class="btn btn-secondary" type="button" onclick="downloadSurveyTemplate()">Download Template</button>
+      <button class="btn btn-secondary" type="button" onclick="exportSurveyCSV()">Export Responses</button>
+      <button class="btn btn-secondary" type="button" onclick="exportSurveySummaryCSV()">Export Summary</button>
+      <button class="btn btn-secondary" type="button" onclick="if(confirm('Delete ALL survey data?')) clearAllSurveyData()">Clear All</button>
+    </div>
+    <div id="surveyAnalystContent" style="margin-top:1.5rem;">
+      <div class="no-data-msg">Loading survey data…</div>
+    </div>
+  </div>
+
 </main>
 
 <script src="app.js"></script>
+<script src="survey.js"></script>
 </body>
 </html>
