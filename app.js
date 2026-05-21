@@ -55,6 +55,9 @@ let simulationState = JSON.parse(JSON.stringify(DEFAULT_SIMULATION_STATE));
 const SUPABASE_URL = 'https://ueyyrugaynzczkcwnxbt.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVleXlydWdheW56Y3prY3dueGJ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5NDEyOTIsImV4cCI6MjA5MjUxNzI5Mn0.x1XqiUs52OH4TKe070OSOK4c0gSGeYRSZJ30XZSBSuQ';
 const SUPABASE_TABLE = 'segments';
+const SINGLE_LOGIN_USERNAME = 'techfactorsnbdb';
+const SINGLE_LOGIN_PASSWORD = 'pbianbdb';
+const SINGLE_LOGIN_AUTH_EMAIL = `${SINGLE_LOGIN_USERNAME}@cipq.local`;
 const supabaseReady = SUPABASE_URL.startsWith('https://') && !SUPABASE_URL.includes('YOUR_PROJECT_ID') && !!SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.includes('YOUR_SUPABASE');
 const supabaseClient = supabaseReady ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
@@ -67,6 +70,13 @@ let currentSession = null;
 let currentUser = null;
 let isCloudSyncing = false;
 const unavailableSupabaseColumns = new Set();
+
+// Shared read-only handles for standalone modules such as survey.js.
+window.supabaseClient = supabaseClient;
+Object.defineProperty(window, 'currentUser', {
+  configurable: true,
+  get: () => currentUser
+});
 
 // Returns true if the current user can write (add/edit/delete) segments.
 function canWrite() {
@@ -923,13 +933,13 @@ function updateIndicatorMetadata() {
 
 function authCredentials() {
   return {
-    email: document.getElementById('auth_email').value.trim(),
+    username: document.getElementById('auth_username').value.trim(),
     password: document.getElementById('auth_password').value
   };
 }
 
 function clearAuthForm() {
-  document.getElementById('auth_email').value = '';
+  document.getElementById('auth_username').value = '';
   document.getElementById('auth_password').value = '';
 }
 
@@ -962,7 +972,7 @@ function enforceGuestView() {
 
 function renderAuthUI() {
   const loginBtn      = document.getElementById('authLoginBtn');
-  const emailInput    = document.getElementById('auth_email');
+  const usernameInput = document.getElementById('auth_username');
   const passwordInput = document.getElementById('auth_password');
   const signInBtn     = document.getElementById('authOpenModalBtn');
   const userBadge     = document.getElementById('userBadge');
@@ -973,7 +983,7 @@ function renderAuthUI() {
 
   const authInputsDisabled = !supabaseReady || isCloudSyncing;
   if (loginBtn)      loginBtn.disabled      = authInputsDisabled;
-  if (emailInput)    emailInput.disabled    = authInputsDisabled || !!currentUser;
+  if (usernameInput) usernameInput.disabled = authInputsDisabled || !!currentUser;
   if (passwordInput) passwordInput.disabled = authInputsDisabled || !!currentUser;
 
   if (isCloudSyncing) {
@@ -988,8 +998,8 @@ function renderAuthUI() {
     if (signInBtn)      signInBtn.style.display  = 'none';
     if (userBadge)      userBadge.style.display  = 'flex';
     if (badgeDot)       badgeDot.className        = 'badge-dot';
-    if (badgeEmail)     badgeEmail.textContent    = currentUser.email || 'Signed in';
-    if (dropdownEmail)  dropdownEmail.textContent = currentUser.email || '';
+    if (badgeEmail)     badgeEmail.textContent    = SINGLE_LOGIN_USERNAME;
+    if (dropdownEmail)  dropdownEmail.textContent = SINGLE_LOGIN_USERNAME;
     if (dropdownNote)   dropdownNote.textContent  = `${dataset.length} segment${dataset.length !== 1 ? 's' : ''} loaded`;
     // Close the login modal if it's open
     const modal = document.getElementById('loginModal');
@@ -1012,9 +1022,9 @@ function openLoginModal() {
   // Clear any previous error
   const err = document.getElementById('loginModalError');
   if (err) { err.style.display = 'none'; err.textContent = ''; }
-  // Focus email field
+  // Focus username field
   setTimeout(() => {
-    const e = document.getElementById('auth_email');
+    const e = document.getElementById('auth_username');
     if (e && !e.disabled) e.focus();
   }, 80);
 }
@@ -1098,6 +1108,22 @@ async function handleSessionChange(session, options = {}) {
   currentSession = session || null;
   currentUser = session?.user || null;
 
+  if (currentUser && String(currentUser.email || '').toLowerCase() !== SINGLE_LOGIN_AUTH_EMAIL.toLowerCase()) {
+    currentSession = null;
+    currentUser = null;
+    try {
+      await supabaseClient?.auth.signOut();
+    } catch (error) {
+      // Session will still be treated as signed out locally.
+    }
+    enforceGuestView();
+    renderAuthUI();
+    if (!options.silent) showStatus('This workspace now accepts only the single username account.', true);
+    await loadPublicSegmentsForGuest();
+    if (window.loadSurveyData) await window.loadSurveyData();
+    return;
+  }
+
   if (!currentUser) {
     // Guest mode: clear local dataset and load public read-only data
     dataset = [];
@@ -1107,6 +1133,7 @@ async function handleSessionChange(session, options = {}) {
     renderAuthUI();
     if (!options.silent) showStatus('Signed out. Viewing published segments in read-only mode.', false);
     await loadPublicSegmentsForGuest();
+    if (window.loadSurveyData) await window.loadSurveyData();
     return;
   }
 
@@ -1114,6 +1141,7 @@ async function handleSessionChange(session, options = {}) {
   enforceGuestView();
   renderAuthUI();
   await loadSegmentsFromSupabase({ silent: !!options.silent });
+  if (window.loadSurveyData) await window.loadSurveyData();
 }
 
 async function initializeAuth() {
@@ -1155,9 +1183,13 @@ async function signInUser() {
     showLoginModalError('Supabase is not configured yet.');
     return;
   }
-  const { email, password } = authCredentials();
-  if (!email || !password) {
-    showLoginModalError('Enter both email and password to sign in.');
+  const { username, password } = authCredentials();
+  if (!username || !password) {
+    showLoginModalError('Enter both username and password to sign in.');
+    return;
+  }
+  if (username !== SINGLE_LOGIN_USERNAME || password !== SINGLE_LOGIN_PASSWORD) {
+    showLoginModalError('Invalid username or password.');
     return;
   }
 
@@ -1168,7 +1200,7 @@ async function signInUser() {
   let data = null;
   let error = null;
   try {
-    const result = await supabaseClient.auth.signInWithPassword({ email, password });
+    const result = await supabaseClient.auth.signInWithPassword({ email: SINGLE_LOGIN_AUTH_EMAIL, password });
     data = result.data;
     error = result.error;
   } catch (fetchError) {
@@ -1179,7 +1211,7 @@ async function signInUser() {
   if (loginBtn) { loginBtn.disabled = false; loginBtn.textContent = 'Sign In'; }
 
   if (error) {
-    showLoginModalError(formatSupabaseError(error));
+    showLoginModalError(`${formatSupabaseError(error)} In Supabase Auth, create ${SINGLE_LOGIN_AUTH_EMAIL} with this password and either disable email confirmation or mark the user as confirmed.`);
     return;
   }
 
@@ -2745,14 +2777,6 @@ function buildClientReportText(layer) {
   lines.push('Cross-Quadrant Reading');
   layer.cross_quadrant_reading.forEach(reading => lines.push(`- ${reading.sentence}`));
 
-  if (layer.validation.issue_count) {
-    lines.push('');
-    lines.push('Validation Notes');
-    layer.validation.issues.slice(0, 20).forEach(item => {
-      lines.push(`- ${item.id}: ${item.issues.join('; ')}`);
-    });
-  }
-
   return lines.join('\r\n');
 }
 
@@ -2960,10 +2984,6 @@ function buildClientReportWordHtml(layer) {
     ${wordHeader(['Section', 'Label', 'Frequency', 'Avg Severity', 'Weighted', 'Stakeholder Spread', 'Notes'])}
     ${summaryTableRows}
   </table>
-  <h2>Validation Notes</h2>
-  ${layer.validation.issue_count
-    ? `<ul>${layer.validation.issues.slice(0, 30).map(item => `<li><strong>${escapeHtml(item.id)}</strong>: ${escapeHtml(item.issues.join('; '))}</li>`).join('')}</ul>`
-    : '<p>No validation warnings in the current dataset.</p>'}
 </body>
 </html>`;
 }
@@ -3308,6 +3328,22 @@ function renderConfidencePill(label) {
   return `<span class="confidence-pill ${escapeHtml(label)}">${escapeHtml(label)}</span>`;
 }
 
+function renderPressureLegend(activeLabel) {
+  const items = [
+    { label: 'Emergent', range: 'below 2.00', color: '#c94a2e' },
+    { label: 'Moderate', range: '2.00-2.99', color: '#d9a441' },
+    { label: 'High', range: '3.00-3.99', color: '#2a6b6e' },
+    { label: 'Critical', range: '4.00-5.00', color: '#3a7a3a' }
+  ];
+  return `<div class="pressure-legend" aria-label="Structural pressure level legend">
+    ${items.map(item => `
+      <div>
+        <span class="pressure-dot" style="background:${escapeHtml(item.color)}"></span>
+        <span><strong>${escapeHtml(item.label)}${item.label === activeLabel ? ' (current)' : ''}</strong>: CIPQ index ${escapeHtml(item.range)}</span>
+      </div>`).join('')}
+  </div>`;
+}
+
 function sevDots(value) {
   let html = `<div class="severity-bar"><span>${escapeHtml(value)}</span><div class="sev-dots">`;
   for (let i = 1; i <= 5; i += 1) {
@@ -3323,12 +3359,39 @@ function renderEvidenceHtml(evidence) {
 }
 
 function renderValidationNotice(layer) {
-  if (!layer.validation.issue_count) return '';
+  if (!currentUser || !layer.validation.issue_count) return '';
   const issuePreview = layer.validation.issues.slice(0, 5).map(item => `<li><strong>${escapeHtml(item.id)}</strong>: ${escapeHtml(item.issues[0])}</li>`).join('');
   return `<div class="validation-banner">
     <strong>Validation notes</strong>
-    <p>${layer.validation.issue_count} record${layer.validation.issue_count !== 1 ? 's' : ''} contain schema or codebook warnings. The client interpretation layer still renders, but you may want to review the flagged records in Analyst View.</p>
+    <p>${layer.validation.issue_count} record${layer.validation.issue_count !== 1 ? 's' : ''} contain schema or codebook warnings. Review the flagged records in Analyst View before final export.</p>
     <ul>${issuePreview}</ul>
+  </div>`;
+}
+
+function renderAnalystValidationPanel() {
+  if (!currentUser) return '';
+  const layer = buildInterpretiveLayer();
+  if (!dataset.length || !layer) {
+    return `<div class="summary-shell">
+      <h3>Validation Notes</h3>
+      <p class="muted-inline">No encoded segments yet. Validation notes will appear here after records are added or imported.</p>
+    </div>`;
+  }
+
+  if (!layer.validation.issue_count) {
+    return `<div class="summary-shell">
+      <h3>Validation Notes</h3>
+      <p class="muted-inline">No validation warnings in the current encoded dataset.</p>
+    </div>`;
+  }
+
+  const issueItems = layer.validation.issues.map(item => `
+    <li><strong>${escapeHtml(item.id)}</strong>: ${escapeHtml(item.issues.join('; '))}</li>
+  `).join('');
+  return `<div class="validation-banner">
+    <strong>Validation Notes</strong>
+    <p>${layer.validation.issue_count} record${layer.validation.issue_count !== 1 ? 's' : ''} need analyst review before final export.</p>
+    <ul>${issueItems}</ul>
   </div>`;
 }
 
@@ -3582,6 +3645,7 @@ function renderDashboard() {
       <div class="label">Structural Pressure Level</div>
       <div style="font-family:'Playfair Display',serif;font-size:1.6rem;font-weight:700;color:var(--gold)">${escapeHtml(layer.structural_pressure_label)}</div>
       <div class="desc">Average of the active quadrant severity scores across Creation, Production, Distribution, and Access.</div>
+      ${renderPressureLegend(layer.structural_pressure_label)}
     </div>
     <div style="font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:#c8bfae">
       <div>${dataset.length} segments coded</div>
@@ -3863,6 +3927,9 @@ function renderPriority() {
 }
 
 function renderDataset() {
+  const validationMount = document.getElementById('validationContent');
+  if (validationMount) validationMount.innerHTML = renderAnalystValidationPanel();
+
   const filterDomain = document.getElementById('dsFilterDomain').value;
   const filterStakeholder = document.getElementById('dsFilterStakeholder').value;
   const filterValueChain = document.getElementById('dsFilterValueChain')?.value || '';

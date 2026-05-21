@@ -20,6 +20,14 @@ let surveyResponses  = [];   // { id, respondent_id, respondent_group, region, q
 function getSB() { return window.supabaseClient || null; }
 function getSBUser() { return window.currentUser || null; }
 
+function formatSurveySaveError(error) {
+  const message = error?.message || String(error || 'Unknown error.');
+  if (/relation .*survey_|does not exist|schema cache|could not find the table/i.test(message)) {
+    return `${message} Run the survey table section in supabase_schema.sql, then refresh this dashboard.`;
+  }
+  return message;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // DATA LOADING
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,14 +61,13 @@ async function loadSurveyData() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CSV IMPORT
-// Format: respondent_id, respondent_group, region, source_id, [Q_CODE]…
-// Header row must contain the question codes as column names.
+// CSV IMPORT — QUESTIONS
+// Format: code, text, cipq_domain (optional), category (optional)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function handleSurveyImport(event) {
+function handleSurveyQuestionsImport(event) {
   if (!window.canWrite || !window.canWrite()) {
-    surveyShowStatus('Sign in to import survey data.', true);
+    surveyShowStatus('Sign in to import survey questions.', true);
     event.target.value = '';
     return;
   }
@@ -72,47 +79,100 @@ function handleSurveyImport(event) {
     header: true,
     skipEmptyLines: true,
     complete: async (results) => {
-      if (!results.data.length) {
-        surveyShowStatus('CSV appears empty.', true);
+      if (!results.data.length) { surveyShowStatus('CSV appears empty.', true); return; }
+
+      const firstRow = results.data[0];
+      const cols = Object.keys(firstRow).map(k => k.toLowerCase().trim());
+      if (!cols.includes('code') || !cols.includes('text')) {
+        surveyShowStatus('Questions CSV must have at least "code" and "text" columns.', true);
         return;
       }
 
-      const meta = ['respondent_id','respondent_group','region','source_id'];
-      const qCodes = Object.keys(results.data[0]).filter(k => !meta.includes(k.toLowerCase()));
+      const questions = results.data.map(row => {
+        const get = (k) => row[Object.keys(row).find(r => r.toLowerCase().trim() === k)] || '';
+        const domain = get('cipq_domain') || get('domain') || null;
+        return {
+          code:        (get('code') || '').trim().toUpperCase(),
+          text:        (get('text') || '').trim(),
+          cipq_domain: CIPQ_DOMAINS.includes(domain) ? domain : null,
+          category:    (get('category') || '').trim() || 'Imported'
+        };
+      }).filter(q => q.code && q.text);
 
-      if (!qCodes.length) {
-        surveyShowStatus('No question columns found. Ensure column headers match question codes (e.g. SQ_01).', true);
-        return;
-      }
+      if (!questions.length) { surveyShowStatus('No valid question rows found.', true); return; }
 
-      // Auto-create any unknown questions as placeholder entries
-      const knownCodes = new Set(surveyQuestions.map(q => q.code));
-      const newQs = qCodes.filter(c => !knownCodes.has(c)).map(c => ({
-        code: c,
-        text: c,
-        cipq_domain: null,
-        category: 'Imported'
-      }));
-      if (newQs.length) await saveSurveyQuestions(newQs);
+      await saveSurveyQuestions(questions);
+      renderSurveyTab();
+      surveyShowStatus(`${questions.length} question${questions.length !== 1 ? 's' : ''} imported.`, false);
+    },
+    error: (err) => surveyShowStatus(`CSV parse error: ${err.message}`, true)
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CSV IMPORT — RESPONSES (long format)
+// Format: respondent_id, respondent_group, region, source_id, question_code, score
+// One row = one respondent's answer to one question.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function handleSurveyResponsesImport(event) {
+  if (!window.canWrite || !window.canWrite()) {
+    surveyShowStatus('Sign in to import survey responses.', true);
+    event.target.value = '';
+    return;
+  }
+  const file = event.target.files[0];
+  if (!file) return;
+  event.target.value = '';
+
+  Papa.parse(file, {
+    header: true,
+    skipEmptyLines: true,
+    complete: async (results) => {
+      if (!results.data.length) { surveyShowStatus('CSV appears empty.', true); return; }
+
+      const get = (row, k) => {
+        const key = Object.keys(row).find(r => r.toLowerCase().trim() === k);
+        return key ? (row[key] || '').trim() : '';
+      };
 
       const rows = [];
+      const unknownCodes = new Set();
+
       for (const row of results.data) {
-        const respondent_id    = row.respondent_id || row.Respondent_ID || '';
-        const respondent_group = row.respondent_group || row.Respondent_Group || '';
-        const region           = row.region || row.Region || '';
-        const source_id        = row.source_id || row.Source_ID || '';
-        for (const qCode of qCodes) {
-          const raw = row[qCode];
-          const score = parseInt(raw, 10);
-          if (!isNaN(score) && score >= 1 && score <= 5) {
-            rows.push({ respondent_id, respondent_group, region, source_id, question_code: qCode, score, recorded_at: new Date().toISOString() });
-          }
+        const question_code = get(row, 'question_code') || get(row, 'question code') || get(row, 'code');
+        const scoreRaw      = get(row, 'score');
+        const score         = parseInt(scoreRaw, 10);
+
+        if (!question_code) continue;
+        if (isNaN(score) || score < 1 || score > 5) continue;
+
+        if (!surveyQuestions.find(q => q.code === question_code)) {
+          unknownCodes.add(question_code);
         }
+
+        rows.push({
+          respondent_id:    get(row, 'respondent_id'),
+          respondent_group: get(row, 'respondent_group'),
+          region:           get(row, 'region'),
+          source_id:        get(row, 'source_id'),
+          question_code,
+          score,
+          recorded_at: new Date().toISOString()
+        });
       }
 
       if (!rows.length) {
-        surveyShowStatus('No valid Likert scores (1–5) found in CSV.', true);
+        surveyShowStatus('No valid rows found. Check that "question_code" and "score" (1–5) columns exist.', true);
         return;
+      }
+
+      // Auto-create placeholder questions for any unrecognised codes
+      if (unknownCodes.size) {
+        await saveSurveyQuestions([...unknownCodes].map(code => ({
+          code, text: code, cipq_domain: null, category: 'Imported'
+        })));
+        surveyShowStatus(`Note: ${unknownCodes.size} unknown question code(s) auto-created. Edit them in the question list.`, false);
       }
 
       await saveSurveyResponses(rows);
@@ -121,11 +181,14 @@ function handleSurveyImport(event) {
   });
 }
 
+// Keep the old combined handler as an alias (for backwards compat)
+const handleSurveyImport = handleSurveyResponsesImport;
+
 async function saveSurveyQuestions(questions) {
   const sb = getSB();
   if (!sb) { surveyQuestions.push(...questions); return; }
   const { data, error } = await sb.from(SURVEY_Q_TABLE).upsert(questions, { onConflict: 'code' }).select();
-  if (error) { surveyShowStatus(`Could not save questions: ${error.message}`, true); return; }
+  if (error) { surveyShowStatus(`Could not save questions: ${formatSurveySaveError(error)}`, true); return; }
   const newCodes = new Set((data || []).map(q => q.code));
   surveyQuestions = [...surveyQuestions.filter(q => !newCodes.has(q.code)), ...(data || [])];
 }
@@ -141,7 +204,7 @@ async function saveSurveyResponses(rows) {
 
   const { data, error } = await sb.from(SURVEY_TABLE).insert(rows).select();
   if (error) {
-    surveyShowStatus(`Could not save responses: ${error.message}`, true);
+    surveyShowStatus(`Could not save responses: ${formatSurveySaveError(error)}`, true);
     return;
   }
   surveyResponses.push(...(data || rows));
@@ -320,15 +383,276 @@ function exportSurveySummaryCSV() {
   downloadText(csv, 'survey_summary.csv', 'text/csv');
 }
 
-function downloadSurveyTemplate() {
+function surveyReportDateStamp() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function surveySentiment(meanValue) {
+  const mean = parseFloat(meanValue);
+  if (mean >= 4.0) return 'Positive perception';
+  if (mean >= 3.0) return 'Neutral / mixed perception';
+  return 'Negative perception';
+}
+
+function surveyWordCell(value, style = '') {
+  return `<td style="border:1px solid #c8bfae;padding:6px;vertical-align:top;${style}">${escHtml(value ?? '')}</td>`;
+}
+
+function surveyWordHeader(labels) {
+  return `<tr>${labels.map(label => `<th style="border:1px solid #c8bfae;padding:6px;background:#f5f0e8;text-align:left;">${escHtml(label)}</th>`).join('')}</tr>`;
+}
+
+function surveyLikertSummary(stats) {
+  return [1, 2, 3, 4, 5]
+    .map(score => `${score}: ${stats.freq[score] || 0}`)
+    .join(' | ');
+}
+
+function surveyDistributionTable(stats) {
+  return `<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;margin:8px 0 16px;">
+    ${surveyWordHeader(['Score', 'Label', 'Responses', 'Percent'])}
+    ${[1, 2, 3, 4, 5].map(score => {
+      const count = stats.freq[score] || 0;
+      const pct = stats.n ? ((count / stats.n) * 100).toFixed(1) : '0.0';
+      return `<tr>
+        ${surveyWordCell(score)}
+        ${surveyWordCell(LIKERT_LABELS[score])}
+        ${surveyWordCell(count)}
+        ${surveyWordCell(`${pct}%`)}
+      </tr>`;
+    }).join('')}
+  </table>`;
+}
+
+function buildSurveyReportText() {
+  if (!surveyResponses.length) return '';
+
+  const qs = questionStats();
+  const dStats = domainStats();
+  const gStats = groupStats('respondent_group');
+  const totalRespondents = new Set(surveyResponses.map(r => r.respondent_id).filter(Boolean)).size;
+  const overall = calcStats(surveyResponses.map(r => r.score));
+
+  const lines = [];
+  lines.push('Survey Analytics Report');
+  lines.push(`Generated: ${new Date().toISOString()}`);
+  lines.push('');
+  lines.push('Analytical Note');
+  lines.push('Survey results are a separate Likert-scale quantitative perception layer. They are not encoded as CIPQ indicators and do not affect CIPQ weighted policy pressures, frequencies, or severity analytics.');
+  lines.push('');
+  lines.push('Dataset Totals');
+  lines.push(`- Responses: ${surveyResponses.length}`);
+  lines.push(`- Respondents: ${totalRespondents || 'Not specified'}`);
+  lines.push(`- Questions: ${surveyQuestions.length}`);
+  lines.push(`- Overall mean: ${overall.mean} / 5.00`);
+  lines.push(`- Sentiment: ${surveySentiment(overall.mean)}`);
+  lines.push(`- Median: ${overall.median}`);
+  lines.push(`- Standard deviation: ${overall.sd}`);
+  lines.push(`- Agree/Strongly Agree: ${overall.agree_pct}%`);
+  lines.push(`- Disagree/Strongly Disagree: ${overall.disagree_pct}%`);
+  lines.push(`- Likert distribution: ${surveyLikertSummary(overall)}`);
+
+  if (dStats.length) {
+    lines.push('');
+    lines.push('Perception by Related CIPQ Domain');
+    lines.push('Domain | Questions | Responses | Mean | Median | SD | Agree %');
+    dStats.forEach(item => {
+      lines.push(`${item.domain} | ${item.qCount} | ${item.stats.n} | ${item.stats.mean} | ${item.stats.median} | ${item.stats.sd} | ${item.stats.agree_pct}%`);
+    });
+    lines.push('Domain mapping is for interpretive comparison only.');
+  }
+
+  if (gStats.length) {
+    lines.push('');
+    lines.push('Respondent-Group Summary');
+    lines.push('Group | Respondents | Responses | Mean | SD | Agree %');
+    gStats.forEach(item => {
+      lines.push(`${item.group} | ${item.respondents || '-'} | ${item.stats.n} | ${item.stats.mean} | ${item.stats.sd} | ${item.stats.agree_pct}%`);
+    });
+  }
+
+  if (qs.length) {
+    lines.push('');
+    lines.push('Question-Level Statistics');
+    lines.push('Code | Question | Related Domain | Category | N | Mean | Median | SD | Agree % | Distribution');
+    qs.forEach(q => {
+      lines.push(`${q.code} | ${q.text} | ${q.cipq_domain || '-'} | ${q.category || 'General'} | ${q.stats.n} | ${q.stats.mean} | ${q.stats.median} | ${q.stats.sd} | ${q.stats.agree_pct}% | ${surveyLikertSummary(q.stats)}`);
+    });
+  }
+
+  return lines.join('\r\n');
+}
+
+function buildSurveyReportWordHtml() {
+  const qs = questionStats();
+  const dStats = domainStats();
+  const gStats = groupStats('respondent_group');
+  const totalRespondents = new Set(surveyResponses.map(r => r.respondent_id).filter(Boolean)).size;
+  const overall = calcStats(surveyResponses.map(r => r.score));
+
+  const domainRows = dStats.map(item => `<tr>
+    ${surveyWordCell(item.domain)}
+    ${surveyWordCell(item.qCount)}
+    ${surveyWordCell(item.stats.n)}
+    ${surveyWordCell(item.stats.mean)}
+    ${surveyWordCell(item.stats.median)}
+    ${surveyWordCell(item.stats.sd)}
+    ${surveyWordCell(`${item.stats.agree_pct}%`)}
+    ${surveyWordCell(surveyLikertSummary(item.stats))}
+  </tr>`).join('');
+
+  const groupRows = gStats.map(item => `<tr>
+    ${surveyWordCell(item.group)}
+    ${surveyWordCell(item.respondents || '-')}
+    ${surveyWordCell(item.stats.n)}
+    ${surveyWordCell(item.stats.mean)}
+    ${surveyWordCell(item.stats.sd)}
+    ${surveyWordCell(`${item.stats.agree_pct}%`)}
+    ${surveyWordCell(surveyLikertSummary(item.stats))}
+  </tr>`).join('');
+
+  const questionRows = qs.map(q => `<tr>
+    ${surveyWordCell(q.code)}
+    ${surveyWordCell(q.text)}
+    ${surveyWordCell(q.cipq_domain || '-')}
+    ${surveyWordCell(q.category || 'General')}
+    ${surveyWordCell(q.stats.n)}
+    ${surveyWordCell(q.stats.mean)}
+    ${surveyWordCell(q.stats.median)}
+    ${surveyWordCell(q.stats.sd)}
+    ${surveyWordCell(`${q.stats.agree_pct}%`)}
+    ${surveyWordCell(surveyLikertSummary(q.stats))}
+  </tr>`).join('');
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Survey Analytics Report</title>
+<style>
+  body { font-family: Arial, sans-serif; color: #1a1a2e; line-height: 1.45; }
+  h1, h2, h3 { font-family: Georgia, serif; color: #1a1a2e; }
+  h1 { font-size: 24pt; margin-bottom: 4px; }
+  h2 { font-size: 16pt; margin-top: 22px; border-bottom: 1px solid #c8bfae; padding-bottom: 4px; }
+  h3 { font-size: 12pt; margin-top: 16px; }
+  .meta { color: #7a7065; margin-bottom: 18px; }
+  .note { background: #f5f0e8; border: 1px solid #c8bfae; padding: 10px; margin: 12px 0 18px; }
+  table { font-size: 9.5pt; }
+</style>
+</head>
+<body>
+  <h1>Survey Analytics Report</h1>
+  <div class="meta">Generated ${escHtml(new Date().toISOString())} | ${surveyResponses.length} Likert responses</div>
+  <div class="note">Survey results are a separate quantitative perception layer. They are not encoded as CIPQ indicators and do not affect CIPQ weighted policy pressures, frequencies, or severity analytics. Related CIPQ domains are used only for interpretive comparison.</div>
+
+  <h2>Dataset Totals</h2>
+  <table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;">
+    ${surveyWordHeader(['Metric', 'Value'])}
+    <tr>${surveyWordCell('Responses')}${surveyWordCell(surveyResponses.length)}</tr>
+    <tr>${surveyWordCell('Respondents')}${surveyWordCell(totalRespondents || 'Not specified')}</tr>
+    <tr>${surveyWordCell('Questions')}${surveyWordCell(surveyQuestions.length)}</tr>
+    <tr>${surveyWordCell('Overall mean')}${surveyWordCell(`${overall.mean} / 5.00`)}</tr>
+    <tr>${surveyWordCell('Sentiment')}${surveyWordCell(surveySentiment(overall.mean))}</tr>
+    <tr>${surveyWordCell('Median')}${surveyWordCell(overall.median)}</tr>
+    <tr>${surveyWordCell('Standard deviation')}${surveyWordCell(overall.sd)}</tr>
+    <tr>${surveyWordCell('Agree / Strongly Agree')}${surveyWordCell(`${overall.agree_pct}%`)}</tr>
+    <tr>${surveyWordCell('Disagree / Strongly Disagree')}${surveyWordCell(`${overall.disagree_pct}%`)}</tr>
+  </table>
+
+  <h2>Overall Likert Distribution</h2>
+  ${surveyDistributionTable(overall)}
+
+  ${dStats.length ? `
+  <h2>Perception by Related CIPQ Domain</h2>
+  <p>Domain mapping is comparative only and remains separate from CIPQ aggregation.</p>
+  <table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;">
+    ${surveyWordHeader(['Domain', 'Questions', 'Responses', 'Mean', 'Median', 'SD', 'Agree %', 'Distribution'])}
+    ${domainRows}
+  </table>` : ''}
+
+  ${gStats.length ? `
+  <h2>Respondent-Group Summary</h2>
+  <table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;">
+    ${surveyWordHeader(['Group', 'Respondents', 'Responses', 'Mean', 'SD', 'Agree %', 'Distribution'])}
+    ${groupRows}
+  </table>` : ''}
+
+  ${qs.length ? `
+  <h2>Question-Level Statistics</h2>
+  <table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;">
+    ${surveyWordHeader(['Code', 'Question', 'Related Domain', 'Category', 'N', 'Mean', 'Median', 'SD', 'Agree %', 'Distribution'])}
+    ${questionRows}
+  </table>` : ''}
+</body>
+</html>`;
+}
+
+function downloadSurveyReport() {
+  if (!surveyResponses.length) {
+    surveyShowStatus('No survey data to export yet.', true);
+    return;
+  }
+  downloadText(`\ufeff${buildSurveyReportWordHtml()}`, `Survey_Analytics_Report_${surveyReportDateStamp()}.doc`, 'application/msword;charset=utf-8');
+  surveyShowStatus('Survey Word report downloaded.', false);
+}
+
+async function copySurveyTextToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch (error) {
+      // Fall back for local file usage where the Clipboard API may be blocked.
+    }
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  textarea.remove();
+}
+
+async function copySurveyReport() {
+  if (!surveyResponses.length) {
+    surveyShowStatus('No survey report to copy yet.', true);
+    return;
+  }
+  try {
+    await copySurveyTextToClipboard(buildSurveyReportText());
+    surveyShowStatus('Survey report copied to clipboard.', false);
+  } catch (error) {
+    surveyShowStatus(`Could not copy survey report: ${error.message || error}`, true);
+  }
+}
+
+function downloadQuestionsTemplate() {
+  const rows = [
+    { code: 'SQ_01', text: 'Printing costs significantly affect publishing sustainability.', cipq_domain: 'Production', category: 'Production Costs' },
+    { code: 'SQ_02', text: 'Authors have adequate access to publishing opportunities.', cipq_domain: 'Access', category: 'Author Access' },
+    { code: 'SQ_03', text: 'Distribution networks adequately reach provincial readers.', cipq_domain: 'Distribution', category: 'Distribution' },
+  ];
+  downloadText(Papa.unparse(rows), 'survey_questions_template.csv', 'text/csv');
+}
+
+function downloadResponsesTemplate() {
   const qCodes = surveyQuestions.length
     ? surveyQuestions.map(q => q.code)
-    : ['SQ_01','SQ_02','SQ_03'];
-  const header = ['respondent_id','respondent_group','region','source_id', ...qCodes];
-  const example = ['R001','Publisher','NCR','SURVEY_01', ...qCodes.map(() => '4')];
-  const csv = Papa.unparse([Object.fromEntries(header.map((h,i) => [h, example[i]]))]);
-  downloadText(csv, 'survey_import_template.csv', 'text/csv');
+    : ['SQ_01', 'SQ_02', 'SQ_03'];
+  const rows = [
+    { respondent_id: 'R001', respondent_group: 'Publisher', region: 'NCR', source_id: 'SURVEY_01', question_code: qCodes[0], score: 4 },
+    { respondent_id: 'R001', respondent_group: 'Publisher', region: 'NCR', source_id: 'SURVEY_01', question_code: qCodes[1] || qCodes[0], score: 3 },
+    { respondent_id: 'R002', respondent_group: 'Author',    region: 'Region IV-A', source_id: 'SURVEY_01', question_code: qCodes[0], score: 5 },
+  ];
+  downloadText(Papa.unparse(rows), 'survey_responses_template.csv', 'text/csv');
 }
+
+// Legacy alias
+function downloadSurveyTemplate() { downloadResponsesTemplate(); }
 
 function downloadText(content, filename, mime) {
   const a = document.createElement('a');
@@ -567,124 +891,52 @@ function renderSurveyAnalyst() {
   if (!el) return;
   const canEdit = window.canWrite && window.canWrite();
 
-  // Question list
+  // Refresh the question dropdown in the static response entry form
+  const qSelect = document.getElementById('sv_question_code');
+  if (qSelect) {
+    const current = qSelect.value;
+    qSelect.innerHTML = surveyQuestions.length
+      ? `<option value="">— Select question —</option>` +
+        surveyQuestions.map(q => `<option value="${escHtml(q.code)}">${escHtml(q.code)} — ${escHtml(q.text.length > 55 ? q.text.substring(0,55)+'…' : q.text)}</option>`).join('')
+      : `<option value="">— Add questions first —</option>`;
+    if (current) qSelect.value = current;
+  }
+
   const qRows = surveyQuestions.length
     ? surveyQuestions.map(q => {
         const n = surveyResponses.filter(r => r.question_code === q.code).length;
         return `
         <tr style="border-bottom:1px solid var(--border);">
-          <td style="padding:0.55rem 0.75rem;font-family:'IBM Plex Mono',monospace;font-size:0.78rem;font-weight:500;">${escHtml(q.code)}</td>
-          <td style="padding:0.55rem 0.75rem;font-size:0.85rem;">${escHtml(q.text)}</td>
-          <td style="padding:0.55rem 0.75rem;">${domainPill(q.cipq_domain)}</td>
-          <td style="padding:0.55rem 0.75rem;font-family:'IBM Plex Mono',monospace;font-size:0.75rem;color:var(--muted);">${escHtml(q.category || '')}</td>
-          <td style="text-align:center;padding:0.55rem 0.75rem;font-family:'IBM Plex Mono',monospace;font-size:0.78rem;">${n}</td>
-          ${canEdit ? `<td style="padding:0.55rem 0.75rem;"><button class="btn btn-secondary" type="button" style="padding:0.3rem 0.7rem;min-height:unset;font-size:0.68rem;" onclick="deleteSurveyQuestion('${escHtml(q.code)}')">Delete</button></td>` : '<td></td>'}
+          <td style="padding:0.6rem 0.85rem;font-family:'IBM Plex Mono',monospace;font-size:0.8rem;font-weight:500;white-space:nowrap;">${escHtml(q.code)}</td>
+          <td style="padding:0.6rem 0.85rem;font-size:0.88rem;line-height:1.45;">${escHtml(q.text)}</td>
+          <td style="padding:0.6rem 0.85rem;">${domainPill(q.cipq_domain)}</td>
+          <td style="padding:0.6rem 0.85rem;font-family:'IBM Plex Mono',monospace;font-size:0.76rem;color:var(--muted);">${escHtml(q.category || '—')}</td>
+          <td style="padding:0.6rem 0.85rem;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:0.8rem;">${n}</td>
+          ${canEdit ? `<td style="padding:0.6rem 0.85rem;"><button class="btn btn-secondary" type="button" style="padding:0.35rem 0.8rem;min-height:unset;font-size:0.7rem;" onclick="deleteSurveyQuestion('${escHtml(q.code)}')">Delete</button></td>` : '<td></td>'}
         </tr>`;
       }).join('')
-    : `<tr><td colspan="6" style="padding:1.5rem;text-align:center;color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:0.8rem;">No questions defined yet.</td></tr>`;
+    : `<tr><td colspan="6" style="padding:2rem;text-align:center;color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:0.8rem;">No questions yet — add one above or import a questions CSV.</td></tr>`;
 
   el.innerHTML = `
-  ${canEdit ? `
-  <!-- Add Question -->
-  <div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;">
-    <div style="font-family:'IBM Plex Mono',monospace;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.09em;color:var(--muted);margin-bottom:1rem;">Add Survey Question</div>
-    <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;">
-      <div class="form-group">
-        <label>Question Code</label>
-        <input type="text" id="sq_code" placeholder="e.g. SQ_01" style="text-transform:uppercase;">
-      </div>
-      <div class="form-group" style="grid-column:span 2;">
-        <label>Question Text</label>
-        <input type="text" id="sq_text" placeholder="e.g. Printing costs significantly affect publishing sustainability.">
-      </div>
-      <div class="form-group">
-        <label>Related CIPQ Domain <span style="font-size:0.65rem;color:var(--muted);">(comparison only)</span></label>
-        <select id="sq_domain">
-          <option value="">-- None --</option>
-          ${CIPQ_DOMAINS.map(d=>`<option>${d}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Category</label>
-        <input type="text" id="sq_category" placeholder="e.g. Production Costs">
-      </div>
-    </div>
-    <div class="actions-row" style="margin-top:1rem;">
-      <button class="btn btn-primary" type="button" onclick="addSurveyQuestion()">Add Question</button>
-    </div>
-  </div>
-
-  <!-- Single Response Entry -->
-  <div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;">
-    <div style="font-family:'IBM Plex Mono',monospace;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.09em;color:var(--muted);margin-bottom:1rem;">Add Individual Response</div>
-    <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;">
-      <div class="form-group">
-        <label>Respondent ID</label>
-        <input type="text" id="sv_respondent_id" placeholder="e.g. R001">
-      </div>
-      <div class="form-group">
-        <label>Respondent Group</label>
-        <select id="sv_respondent_group">
-          <option value="">-- Select --</option>
-          <option>Author</option><option>Publisher</option><option>Printer</option>
-          <option>Distributor</option><option>Bookseller</option><option>Librarian</option>
-          <option>Reader</option><option>Government</option><option>Other</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Region</label>
-        <select id="sv_region">
-          <option value="">-- Optional --</option>
-          <option>NCR</option><option>CAR</option><option>Region I</option><option>Region II</option>
-          <option>Region III</option><option>Region IV-A</option><option>Region IV-B</option>
-          <option>Region V</option><option>Region VI</option><option>Region VII</option>
-          <option>Region VIII</option><option>Region IX</option><option>Region X</option>
-          <option>Region XI</option><option>Region XII</option><option>Region XIII</option>
-          <option>BARMM</option><option>Unknown</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Source ID</label>
-        <input type="text" id="sv_source_id" placeholder="e.g. SURVEY_01">
-      </div>
-      <div class="form-group">
-        <label>Question Code</label>
-        <select id="sv_question_code">
-          <option value="">-- Select --</option>
-          ${surveyQuestions.map(q=>`<option value="${escHtml(q.code)}">${escHtml(q.code)} — ${escHtml(q.text.substring(0,50))}${q.text.length>50?'…':''}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Score (1–5)</label>
-        <select id="sv_score">
-          <option value="">-- Select --</option>
-          ${[1,2,3,4,5].map(v=>`<option value="${v}">${v} — ${LIKERT_LABELS[v]}</option>`).join('')}
-        </select>
-      </div>
-    </div>
-    <div class="actions-row" style="margin-top:1rem;">
-      <button class="btn btn-primary" type="button" onclick="addSurveyResponse()">Add Response</button>
-    </div>
-  </div>` : ''}
-
-  <!-- Question List -->
-  <div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;">
-    <div style="font-family:'IBM Plex Mono',monospace;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.09em;color:var(--muted);margin-bottom:1rem;">
-      Survey Questions (${surveyQuestions.length})
-      <span style="margin-left:1rem;font-size:0.63rem;opacity:0.6;">${surveyResponses.length} total responses</span>
+  <div class="summary-shell">
+    <div class="section-title" style="font-size:1.1rem;margin-top:0;border-bottom:1px solid var(--border);">
+      Survey Questions
+      <span>${surveyQuestions.length} question${surveyQuestions.length !== 1 ? 's' : ''} · ${surveyResponses.length} response${surveyResponses.length !== 1 ? 's' : ''}</span>
     </div>
     <div style="overflow-x:auto;">
-    <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
-      <thead><tr style="border-bottom:2px solid var(--border);">
-        <th style="text-align:left;padding:0.45rem 0.75rem;font-family:'IBM Plex Mono',monospace;font-size:0.68rem;color:var(--muted);font-weight:500;">Code</th>
-        <th style="text-align:left;padding:0.45rem 0.75rem;font-family:'IBM Plex Mono',monospace;font-size:0.68rem;color:var(--muted);font-weight:500;">Text</th>
-        <th style="text-align:left;padding:0.45rem 0.75rem;font-family:'IBM Plex Mono',monospace;font-size:0.68rem;color:var(--muted);font-weight:500;">Domain</th>
-        <th style="text-align:left;padding:0.45rem 0.75rem;font-family:'IBM Plex Mono',monospace;font-size:0.68rem;color:var(--muted);font-weight:500;">Category</th>
-        <th style="text-align:center;padding:0.45rem 0.75rem;font-family:'IBM Plex Mono',monospace;font-size:0.68rem;color:var(--muted);font-weight:500;">Responses</th>
-        <th></th>
-      </tr></thead>
-      <tbody>${qRows}</tbody>
-    </table>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom:2px solid var(--border);">
+            <th style="text-align:left;padding:0.5rem 0.85rem;font-family:'IBM Plex Mono',monospace;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);font-weight:500;">Code</th>
+            <th style="text-align:left;padding:0.5rem 0.85rem;font-family:'IBM Plex Mono',monospace;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);font-weight:500;">Question</th>
+            <th style="text-align:left;padding:0.5rem 0.85rem;font-family:'IBM Plex Mono',monospace;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);font-weight:500;">Domain</th>
+            <th style="text-align:left;padding:0.5rem 0.85rem;font-family:'IBM Plex Mono',monospace;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);font-weight:500;">Category</th>
+            <th style="text-align:center;padding:0.5rem 0.85rem;font-family:'IBM Plex Mono',monospace;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);font-weight:500;">Responses</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>${qRows}</tbody>
+      </table>
     </div>
   </div>`;
 }
@@ -708,11 +960,17 @@ Object.assign(window, {
   renderSurveyClient,
   renderSurveyAnalyst,
   handleSurveyImport,
+  handleSurveyQuestionsImport,
+  handleSurveyResponsesImport,
   addSurveyResponse,
   addSurveyQuestion,
   deleteSurveyQuestion,
   clearAllSurveyData,
   exportSurveyCSV,
   exportSurveySummaryCSV,
-  downloadSurveyTemplate
+  downloadSurveyReport,
+  copySurveyReport,
+  downloadSurveyTemplate,
+  downloadQuestionsTemplate,
+  downloadResponsesTemplate
 });

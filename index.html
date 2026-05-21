@@ -582,6 +582,25 @@
     color: #c8bfae;
     line-height: 1.5;
   }
+  .pressure-legend {
+    margin-top: 0.85rem;
+    display: grid;
+    gap: 0.4rem;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.7rem;
+    color: #c8bfae;
+  }
+  .pressure-legend div {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .pressure-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+  }
 
   .domain-grid {
     display: grid;
@@ -1741,8 +1760,8 @@
       </div>
       <div class="login-modal-body">
         <div class="form-group">
-          <label>Email</label>
-          <input type="email" id="auth_email" placeholder="name@example.com" autocomplete="email">
+          <label>Username</label>
+          <input type="text" id="auth_username" placeholder="Username" autocomplete="username">
         </div>
         <div class="form-group">
           <label>Password</label>
@@ -2042,6 +2061,7 @@
       <button class="btn btn-secondary" type="button" onclick="if(confirm('Delete all segments?')) { clearAllSegments(); }">Clear All</button>
       <span class="count-badge" id="datasetCount">0 segments</span>
     </div>
+    <div id="validationContent"></div>
     <div class="filter-row">
       <label>Filter Quadrant:</label>
       <select id="dsFilterDomain" onchange="renderDataset()">
@@ -2083,6 +2103,8 @@
   <div id="tab-survey" class="tab-panel" data-view="client">
     <div class="section-title">Survey Analytics <span>Likert-scale quantitative perception data — parallel to CIPQ, not integrated</span></div>
     <div class="dashboard-actions">
+      <button class="btn btn-secondary" type="button" onclick="downloadSurveyReport()">Download Word Report</button>
+      <button class="btn btn-secondary" type="button" onclick="copySurveyReport()">Copy Report Text</button>
       <button class="btn btn-secondary" type="button" onclick="exportSurveyCSV()">Export Responses CSV</button>
       <button class="btn btn-secondary" type="button" onclick="exportSurveySummaryCSV()">Export Summary CSV</button>
     </div>
@@ -2093,22 +2115,132 @@
 
   <!-- ── Survey Data Entry (Analyst View) ────────────────────────────────── -->
   <div id="tab-survey-analyst" class="tab-panel" data-view="encoder">
-    <div class="section-title">Survey Data Management <span>Import, define questions, enter responses</span></div>
-    <div class="dashboard-actions">
-      <div class="upload-area" id="surveyUploadZone" style="margin-bottom:0;padding:1.5rem 2rem;text-align:left;display:flex;align-items:center;gap:1.5rem;cursor:pointer;" onclick="document.getElementById('surveyFileInput').click()">
-        <span class="icon" style="font-size:1.6rem;margin:0;">CSV</span>
-        <div>
-          <h3 style="font-size:1rem;margin-bottom:0.2rem;">Import Survey Responses</h3>
-          <p style="font-size:0.8rem;">CSV with columns: respondent_id, respondent_group, region, source_id, then one column per question code (values 1–5).</p>
+    <div class="section-title">Survey Data Management <span>Import questions and responses separately</span></div>
+
+    <!-- CSV Upload zones -->
+    <div class="form-grid" style="grid-template-columns:1fr 1fr;margin-bottom:0.75rem;">
+      <div>
+        <div class="form-note" style="margin:0 0 0.5rem;">Step 1 — Upload Questions</div>
+        <div class="upload-area" style="margin-bottom:0;" onclick="document.getElementById('surveyQuestionsFileInput').click()">
+          <span class="icon">Q</span>
+          <h3>Questions CSV</h3>
+          <p>Columns: <code>code, text, cipq_domain, category</code></p>
+          <input type="file" id="surveyQuestionsFileInput" accept=".csv" onchange="handleSurveyQuestionsImport(event)" style="display:none;">
         </div>
-        <input type="file" id="surveyFileInput" accept=".csv" onchange="handleSurveyImport(event)" style="display:none;">
       </div>
-      <button class="btn btn-secondary" type="button" onclick="downloadSurveyTemplate()">Download Template</button>
+      <div>
+        <div class="form-note" style="margin:0 0 0.5rem;">Step 2 — Upload Responses</div>
+        <div class="upload-area" style="margin-bottom:0;" onclick="document.getElementById('surveyFileInput').click()">
+          <span class="icon">R</span>
+          <h3>Responses CSV</h3>
+          <p>Columns: <code>respondent_id, respondent_group, region, source_id, question_code, score</code></p>
+          <input type="file" id="surveyFileInput" accept=".csv" onchange="handleSurveyResponsesImport(event)" style="display:none;">
+        </div>
+      </div>
+    </div>
+
+    <div class="actions-row">
+      <button class="btn btn-secondary" type="button" onclick="downloadQuestionsTemplate()">Download Questions Template</button>
+      <button class="btn btn-secondary" type="button" onclick="downloadResponsesTemplate()">Download Responses Template</button>
       <button class="btn btn-secondary" type="button" onclick="exportSurveyCSV()">Export Responses</button>
       <button class="btn btn-secondary" type="button" onclick="exportSurveySummaryCSV()">Export Summary</button>
       <button class="btn btn-secondary" type="button" onclick="if(confirm('Delete ALL survey data?')) clearAllSurveyData()">Clear All</button>
     </div>
-    <div id="surveyAnalystContent" style="margin-top:1.5rem;">
+
+    <!-- Add Question (manual) -->
+    <div class="summary-shell" style="margin-bottom:1.5rem;">
+      <div class="section-title" style="font-size:1.1rem;margin-top:0;border-bottom:1px solid var(--border);">Add Survey Question</div>
+      <div class="form-note">Define each survey question with a short code, full text, and optional CIPQ domain mapping for comparison purposes only.</div>
+      <div style="display:grid;grid-template-columns:180px 1fr 220px 200px;gap:1.35rem;margin-bottom:1.5rem;">
+        <div class="form-group">
+          <label>Question Code</label>
+          <input type="text" id="sq_code" placeholder="e.g. SQ_01">
+        </div>
+        <div class="form-group">
+          <label>Question Text</label>
+          <input type="text" id="sq_text" placeholder="e.g. Printing costs significantly affect publishing sustainability.">
+        </div>
+        <div class="form-group">
+          <label>Related CIPQ Domain <span style="text-transform:none;letter-spacing:0;font-size:0.65rem;">(comparison only)</span></label>
+          <select id="sq_domain">
+            <option value="">— None —</option>
+            <option>Creation</option>
+            <option>Production</option>
+            <option>Distribution</option>
+            <option>Access</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Category</label>
+          <input type="text" id="sq_category" placeholder="e.g. Production Costs">
+        </div>
+      </div>
+      <div class="actions-row" style="margin-bottom:0;">
+        <button class="btn btn-primary" type="button" onclick="addSurveyQuestion()">Add Question</button>
+      </div>
+    </div>
+
+    <!-- Add Individual Response (manual) -->
+    <div class="summary-shell" style="margin-bottom:1.5rem;">
+      <div class="section-title" style="font-size:1.1rem;margin-top:0;border-bottom:1px solid var(--border);">Add Individual Response</div>
+      <div class="form-note">Enter a single respondent's score for one question. Define questions first so they appear in the dropdown below.</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1.35rem;margin-bottom:1rem;">
+        <div class="form-group">
+          <label>Respondent ID</label>
+          <input type="text" id="sv_respondent_id" placeholder="e.g. R001">
+        </div>
+        <div class="form-group">
+          <label>Respondent Group</label>
+          <select id="sv_respondent_group">
+            <option value="">— Select —</option>
+            <option>Author</option><option>Publisher</option><option>Printer</option>
+            <option>Distributor</option><option>Bookseller</option><option>Librarian</option>
+            <option>Reader</option><option>Government</option><option>Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Region</label>
+          <select id="sv_region">
+            <option value="">— Optional —</option>
+            <option>NCR</option><option>CAR</option><option>Region I</option><option>Region II</option>
+            <option>Region III</option><option>Region IV-A</option><option>Region IV-B</option>
+            <option>Region V</option><option>Region VI</option><option>Region VII</option>
+            <option>Region VIII</option><option>Region IX</option><option>Region X</option>
+            <option>Region XI</option><option>Region XII</option><option>Region XIII</option>
+            <option>BARMM</option><option>Unknown</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Source ID</label>
+          <input type="text" id="sv_source_id" placeholder="e.g. SURVEY_01">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 200px;gap:1.35rem;margin-bottom:1.5rem;">
+        <div class="form-group">
+          <label>Question</label>
+          <select id="sv_question_code">
+            <option value="">— Add questions first —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Score</label>
+          <select id="sv_score">
+            <option value="">— Select —</option>
+            <option value="1">1 — Strongly Disagree</option>
+            <option value="2">2 — Disagree</option>
+            <option value="3">3 — Neutral</option>
+            <option value="4">4 — Agree</option>
+            <option value="5">5 — Strongly Agree</option>
+          </select>
+        </div>
+      </div>
+      <div class="actions-row" style="margin-bottom:0;">
+        <button class="btn btn-primary" type="button" onclick="addSurveyResponse()">Add Response</button>
+      </div>
+    </div>
+
+    <!-- Dynamic question list -->
+    <div id="surveyAnalystContent">
       <div class="no-data-msg">Loading survey data…</div>
     </div>
   </div>
