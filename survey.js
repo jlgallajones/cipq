@@ -97,6 +97,31 @@ function formatSurveySaveError(error) {
 // DATA LOADING
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Fetches ALL survey_responses rows in pages of 1,000 to bypass Supabase's
+// default 1,000-row cap, which silently truncates large datasets on refresh.
+async function fetchAllSurveyResponses(sb) {
+  const PAGE_SIZE = 1000;
+  let allRows = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await sb
+      .from(SURVEY_TABLE)
+      .select('*')
+      .order('recorded_at')
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+
+    allRows = allRows.concat(data);
+    if (data.length < PAGE_SIZE) break; // last page — no more rows
+    from += PAGE_SIZE;
+  }
+
+  return allRows;
+}
+
 async function loadSurveyData() {
   const sb = getSB();
   surveyShowStatus('Loading survey data…', false);
@@ -107,16 +132,13 @@ async function loadSurveyData() {
   }
 
   try {
-    const [qRes, rRes] = await Promise.all([
+    const [qRes, allResponses] = await Promise.all([
       sb.from(SURVEY_Q_TABLE).select('*').order('code'),
-      getSBUser()
-        ? sb.from(SURVEY_TABLE).select('*').order('recorded_at')
-        : sb.from(SURVEY_TABLE).select('*').order('recorded_at')
+      fetchAllSurveyResponses(sb)
     ]);
     if (qRes.error) throw qRes.error;
-    if (rRes.error) throw rRes.error;
     surveyQuestions = qRes.data || [];
-    surveyResponses = rRes.data || [];
+    surveyResponses = allResponses;
     renderSurveyTab();
     surveyShowStatus(`Survey loaded: ${surveyQuestions.length} questions, ${surveyResponses.length} responses.`, false);
   } catch (err) {
@@ -1253,6 +1275,7 @@ function renderSurveyTab() {
 
 Object.assign(window, {
   loadSurveyData,
+  fetchAllSurveyResponses,
   renderSurveyTab,
   renderSurveyClient,
   renderSurveyAnalyst,
