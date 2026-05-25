@@ -11,14 +11,54 @@ const SURVEY_TABLE     = 'survey_responses';
 const SURVEY_Q_TABLE   = 'survey_questions';
 const LIKERT_LABELS    = { 1:'Strongly Disagree', 2:'Disagree', 3:'Neutral', 4:'Agree', 5:'Strongly Agree' };
 const CIPQ_DOMAINS     = ['Creation', 'Production', 'Distribution', 'Access'];
+const SURVEY_TYPES     = { LIKERT:'likert', OPEN:'open_ended' };
 
 // ── In-memory store ──────────────────────────────────────────────────────────
-let surveyQuestions  = [];   // { id, code, text, cipq_domain, category }
-let surveyResponses  = [];   // { id, respondent_id, respondent_group, region, question_code, score, source_id, recorded_at }
+let surveyQuestions  = [];   // { id, code, text, question_type, cipq_domain, category }
+let surveyResponses  = [];   // { id, respondent_id, respondent_group, region, question_code, score, answer_text, source_id, recorded_at }
 
 // ── Supabase helpers (shared client from app.js) ─────────────────────────────
 function getSB() { return window.supabaseClient || null; }
 function getSBUser() { return window.currentUser || null; }
+
+function normalizeQuestionType(value) {
+  const type = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return ['open', 'open_ended', 'openended', 'text', 'sentence', 'qualitative', 'insight'].includes(type)
+    ? SURVEY_TYPES.OPEN
+    : SURVEY_TYPES.LIKERT;
+}
+
+function surveyQuestionTypeLabel(question) {
+  return isLikertQuestion(question) ? 'rating' : SURVEY_TYPES.OPEN;
+}
+
+function surveyQuestionType(question) {
+  return normalizeQuestionType(question?.question_type || question?.type || SURVEY_TYPES.LIKERT);
+}
+
+function isLikertQuestion(question) {
+  return surveyQuestionType(question) === SURVEY_TYPES.LIKERT;
+}
+
+function questionForCode(code) {
+  return surveyQuestions.find(q => q.code === code);
+}
+
+function numericScore(value) {
+  const score = Number(value);
+  return Number.isInteger(score) && score >= 1 && score <= 5 ? score : null;
+}
+
+function likertResponses() {
+  return surveyResponses.filter(r => numericScore(r.score) !== null && isLikertQuestion(questionForCode(r.question_code)));
+}
+
+function openEndedResponses() {
+  return surveyResponses.filter(r => {
+    const q = questionForCode(r.question_code);
+    return !isLikertQuestion(q) || String(r.answer_text || '').trim();
+  }).filter(r => String(r.answer_text || '').trim());
+}
 
 function formatSurveySaveError(error) {
   const message = error?.message || String(error || 'Unknown error.');
@@ -62,7 +102,7 @@ async function loadSurveyData() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CSV IMPORT — QUESTIONS
-// Format: code, text, cipq_domain (optional), category (optional)
+// Format: code, text, question_type (rating/open_ended), cipq_domain (optional), category (optional)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function handleSurveyQuestionsImport(event) {
@@ -94,6 +134,7 @@ function handleSurveyQuestionsImport(event) {
         return {
           code:        (get('code') || '').trim().toUpperCase(),
           text:        (get('text') || '').trim(),
+          question_type: normalizeQuestionType(get('question_type') || get('type')),
           cipq_domain: CIPQ_DOMAINS.includes(domain) ? domain : null,
           category:    (get('category') || '').trim() || 'Imported'
         };
@@ -111,7 +152,7 @@ function handleSurveyQuestionsImport(event) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CSV IMPORT — RESPONSES (long format)
-// Format: respondent_id, respondent_group, region, source_id, question_code, score
+// Format: respondent_id, respondent_group, region, source_id, question_code, score, answer_text
 // One row = one respondent's answer to one question.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -137,18 +178,23 @@ function handleSurveyResponsesImport(event) {
       };
 
       const rows = [];
-      const unknownCodes = new Set();
+      const unknownQuestions = new Map();
 
       for (const row of results.data) {
-        const question_code = get(row, 'question_code') || get(row, 'question code') || get(row, 'code');
+        const question_code = (get(row, 'question_code') || get(row, 'question code') || get(row, 'code')).toUpperCase();
         const scoreRaw      = get(row, 'score');
-        const score         = parseInt(scoreRaw, 10);
+        const answer_text   = get(row, 'answer_text') || get(row, 'answer') || get(row, 'insight') || get(row, 'response_text') || get(row, 'text_response');
+        const score         = numericScore(scoreRaw);
+        const existingQ     = questionForCode(question_code);
+        const inferredType  = existingQ ? surveyQuestionType(existingQ) : (answer_text && score === null ? SURVEY_TYPES.OPEN : SURVEY_TYPES.LIKERT);
 
         if (!question_code) continue;
-        if (isNaN(score) || score < 1 || score > 5) continue;
 
-        if (!surveyQuestions.find(q => q.code === question_code)) {
-          unknownCodes.add(question_code);
+        if (inferredType === SURVEY_TYPES.LIKERT && score === null) continue;
+        if (inferredType === SURVEY_TYPES.OPEN && !answer_text) continue;
+
+        if (!existingQ) {
+          unknownQuestions.set(question_code, inferredType);
         }
 
         rows.push({
@@ -157,22 +203,23 @@ function handleSurveyResponsesImport(event) {
           region:           get(row, 'region'),
           source_id:        get(row, 'source_id'),
           question_code,
-          score,
+          score: inferredType === SURVEY_TYPES.LIKERT ? score : null,
+          answer_text: inferredType === SURVEY_TYPES.OPEN ? answer_text : '',
           recorded_at: new Date().toISOString()
         });
       }
 
       if (!rows.length) {
-        surveyShowStatus('No valid rows found. Check that "question_code" and "score" (1–5) columns exist.', true);
+        surveyShowStatus('No valid rows found. Use "score" (1-5) for rate questions or "answer_text" for open-ended questions.', true);
         return;
       }
 
       // Auto-create placeholder questions for any unrecognised codes
-      if (unknownCodes.size) {
-        await saveSurveyQuestions([...unknownCodes].map(code => ({
-          code, text: code, cipq_domain: null, category: 'Imported'
+      if (unknownQuestions.size) {
+        await saveSurveyQuestions([...unknownQuestions.entries()].map(([code, question_type]) => ({
+          code, text: code, question_type, cipq_domain: null, category: 'Imported'
         })));
-        surveyShowStatus(`Note: ${unknownCodes.size} unknown question code(s) auto-created. Edit them in the question list.`, false);
+        surveyShowStatus(`Note: ${unknownQuestions.size} unknown question code(s) auto-created. Edit them in the question list.`, false);
       }
 
       await saveSurveyResponses(rows);
@@ -186,8 +233,13 @@ const handleSurveyImport = handleSurveyResponsesImport;
 
 async function saveSurveyQuestions(questions) {
   const sb = getSB();
-  if (!sb) { surveyQuestions.push(...questions); return; }
-  const { data, error } = await sb.from(SURVEY_Q_TABLE).upsert(questions, { onConflict: 'code' }).select();
+  const normalizedQuestions = questions.map(q => ({
+    ...q,
+    code: String(q.code || '').trim().toUpperCase(),
+    question_type: normalizeQuestionType(q.question_type || q.type)
+  }));
+  if (!sb) { surveyQuestions.push(...normalizedQuestions); return; }
+  const { data, error } = await sb.from(SURVEY_Q_TABLE).upsert(normalizedQuestions, { onConflict: 'code' }).select();
   if (error) { surveyShowStatus(`Could not save questions: ${formatSurveySaveError(error)}`, true); return; }
   const newCodes = new Set((data || []).map(q => q.code));
   surveyQuestions = [...surveyQuestions.filter(q => !newCodes.has(q.code)), ...(data || [])];
@@ -226,24 +278,30 @@ async function addSurveyResponse() {
   const region           = (document.getElementById('sv_region')?.value || '').trim();
   const source_id        = (document.getElementById('sv_source_id')?.value || '').trim();
   const question_code    = (document.getElementById('sv_question_code')?.value || '').trim();
-  const scoreRaw         = parseInt(document.getElementById('sv_score')?.value || '', 10);
+  const scoreRaw         = numericScore(document.getElementById('sv_score')?.value || '');
+  const answer_text      = (document.getElementById('sv_answer_text')?.value || '').trim();
+  const selectedQuestion = questionForCode(question_code);
+  const questionType     = surveyQuestionType(selectedQuestion);
 
   if (!question_code) { surveyShowStatus('Select or enter a question code.', true); return; }
-  if (isNaN(scoreRaw) || scoreRaw < 1 || scoreRaw > 5) { surveyShowStatus('Score must be 1–5.', true); return; }
+  if (questionType === SURVEY_TYPES.LIKERT && scoreRaw === null) { surveyShowStatus('Score must be 1-5.', true); return; }
+  if (questionType === SURVEY_TYPES.OPEN && !answer_text) { surveyShowStatus('Open-ended answers require participant insight text.', true); return; }
 
   // Ensure question exists
-  if (!surveyQuestions.find(q => q.code === question_code)) {
-    await saveSurveyQuestions([{ code: question_code, text: question_code, cipq_domain: null, category: 'Manual' }]);
+  if (!selectedQuestion) {
+    await saveSurveyQuestions([{ code: question_code, text: question_code, question_type: SURVEY_TYPES.LIKERT, cipq_domain: null, category: 'Manual' }]);
   }
 
   await saveSurveyResponses([{
     respondent_id, respondent_group, region, source_id,
-    question_code, score: scoreRaw,
+    question_code,
+    score: questionType === SURVEY_TYPES.LIKERT ? scoreRaw : null,
+    answer_text: questionType === SURVEY_TYPES.OPEN ? answer_text : '',
     recorded_at: new Date().toISOString()
   }]);
 
   // Clear entry fields
-  ['sv_respondent_id','sv_score'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['sv_respondent_id','sv_score','sv_answer_text'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
 }
 
 async function addSurveyQuestion() {
@@ -253,13 +311,14 @@ async function addSurveyQuestion() {
   }
   const code       = (document.getElementById('sq_code')?.value || '').trim().toUpperCase();
   const text       = (document.getElementById('sq_text')?.value || '').trim();
+  const question_type = normalizeQuestionType(document.getElementById('sq_question_type')?.value || '');
   const cipq_domain = (document.getElementById('sq_domain')?.value || '') || null;
   const category   = (document.getElementById('sq_category')?.value || '').trim() || 'General';
 
   if (!code || !text) { surveyShowStatus('Question code and text are required.', true); return; }
   if (surveyQuestions.find(q => q.code === code)) { surveyShowStatus(`Question ${code} already exists.`, true); return; }
 
-  await saveSurveyQuestions([{ code, text, cipq_domain, category }]);
+  await saveSurveyQuestions([{ code, text, question_type, cipq_domain, category }]);
   renderSurveyAnalyst();
   surveyShowStatus(`Question ${code} added.`, false);
   ['sq_code','sq_text'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
@@ -298,6 +357,7 @@ async function clearAllSurveyData() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function calcStats(scores) {
+  scores = scores.map(numericScore).filter(score => score !== null);
   if (!scores.length) return null;
   const n   = scores.length;
   const sum = scores.reduce((a, b) => a + b, 0);
@@ -315,28 +375,36 @@ function calcStats(scores) {
 }
 
 function questionStats() {
-  return surveyQuestions.map(q => {
-    const scores = surveyResponses.filter(r => r.question_code === q.code).map(r => r.score);
+  return surveyQuestions.filter(isLikertQuestion).map(q => {
+    const scores = likertResponses().filter(r => r.question_code === q.code).map(r => r.score);
     return { ...q, stats: calcStats(scores) };
   }).filter(q => q.stats);
 }
 
 function domainStats() {
   return CIPQ_DOMAINS.map(domain => {
-    const qCodes = new Set(surveyQuestions.filter(q => q.cipq_domain === domain).map(q => q.code));
-    const scores = surveyResponses.filter(r => qCodes.has(r.question_code)).map(r => r.score);
+    const qCodes = new Set(surveyQuestions.filter(q => q.cipq_domain === domain && isLikertQuestion(q)).map(q => q.code));
+    const scores = likertResponses().filter(r => qCodes.has(r.question_code)).map(r => r.score);
     return { domain, stats: calcStats(scores), qCount: qCodes.size };
   }).filter(d => d.stats);
 }
 
 function groupStats(groupField = 'respondent_group') {
-  const groups = [...new Set(surveyResponses.map(r => r[groupField]).filter(Boolean))];
+  const ratedRows = likertResponses();
+  const groups = [...new Set(ratedRows.map(r => r[groupField]).filter(Boolean))];
   return groups.map(group => {
-    const groupResps = surveyResponses.filter(r => r[groupField] === group);
+    const groupResps = ratedRows.filter(r => r[groupField] === group);
     const scores = groupResps.map(r => r.score);
     const respondents = new Set(groupResps.map(r => r.respondent_id).filter(Boolean)).size;
     return { group, respondents, stats: calcStats(scores) };
   }).filter(g => g.stats).sort((a,b) => parseFloat(b.stats.mean) - parseFloat(a.stats.mean));
+}
+
+function openEndedQuestionSummaries() {
+  return surveyQuestions.filter(q => !isLikertQuestion(q)).map(q => {
+    const responses = openEndedResponses().filter(r => r.question_code === q.code);
+    return { ...q, responses };
+  }).filter(q => q.responses.length);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -351,10 +419,12 @@ function exportSurveyCSV() {
     region:           r.region || '',
     source_id:        r.source_id || '',
     question_code:    r.question_code,
-    question_text:    surveyQuestions.find(q => q.code === r.question_code)?.text || '',
-    cipq_domain:      surveyQuestions.find(q => q.code === r.question_code)?.cipq_domain || '',
-    score:            r.score,
-    score_label:      LIKERT_LABELS[r.score] || '',
+    question_text:    questionForCode(r.question_code)?.text || '',
+    question_type:    surveyQuestionTypeLabel(questionForCode(r.question_code)),
+    cipq_domain:      questionForCode(r.question_code)?.cipq_domain || '',
+    score:            numericScore(r.score) ?? '',
+    score_label:      LIKERT_LABELS[numericScore(r.score)] || '',
+    answer_text:      r.answer_text || '',
     recorded_at:      r.recorded_at || ''
   }));
   const csv = Papa.unparse(rows);
@@ -363,10 +433,12 @@ function exportSurveyCSV() {
 
 function exportSurveySummaryCSV() {
   const qs = questionStats();
-  if (!qs.length) { surveyShowStatus('No survey data to export.', true); return; }
+  const openQs = openEndedQuestionSummaries();
+  if (!qs.length && !openQs.length) { surveyShowStatus('No survey data to export.', true); return; }
   const rows = qs.map(q => ({
     code: q.code,
     text: q.text,
+    question_type: 'rating',
     cipq_domain: q.cipq_domain || '',
     category: q.category || '',
     n: q.stats.n,
@@ -377,8 +449,24 @@ function exportSurveySummaryCSV() {
     agree_pct: q.stats.agree_pct,
     disagree_pct: q.stats.disagree_pct,
     freq_1: q.stats.freq[1], freq_2: q.stats.freq[2], freq_3: q.stats.freq[3],
-    freq_4: q.stats.freq[4], freq_5: q.stats.freq[5]
-  }));
+    freq_4: q.stats.freq[4], freq_5: q.stats.freq[5],
+    insight_count: ''
+  })).concat(openQs.map(q => ({
+    code: q.code,
+    text: q.text,
+    question_type: SURVEY_TYPES.OPEN,
+    cipq_domain: q.cipq_domain || '',
+    category: q.category || '',
+    n: '',
+    mean: '',
+    median: '',
+    sd: '',
+    mode: '',
+    agree_pct: '',
+    disagree_pct: '',
+    freq_1: '', freq_2: '', freq_3: '', freq_4: '', freq_5: '',
+    insight_count: q.responses.length
+  })));
   const csv = Papa.unparse(rows);
   downloadText(csv, 'survey_summary.csv', 'text/csv');
 }
@@ -428,29 +516,36 @@ function buildSurveyReportText() {
   if (!surveyResponses.length) return '';
 
   const qs = questionStats();
+  const openQs = openEndedQuestionSummaries();
   const dStats = domainStats();
   const gStats = groupStats('respondent_group');
   const totalRespondents = new Set(surveyResponses.map(r => r.respondent_id).filter(Boolean)).size;
-  const overall = calcStats(surveyResponses.map(r => r.score));
+  const ratedRows = likertResponses();
+  const openRows = openEndedResponses();
+  const overall = calcStats(ratedRows.map(r => r.score));
 
   const lines = [];
   lines.push('Survey Analytics Report');
   lines.push(`Generated: ${new Date().toISOString()}`);
   lines.push('');
   lines.push('Analytical Note');
-  lines.push('Survey results are a separate Likert-scale quantitative perception layer. They are not encoded as CIPQ indicators and do not affect CIPQ weighted policy pressures, frequencies, or severity analytics.');
+  lines.push('Survey results are a separate perception layer. Likert ratings are summarized quantitatively; open-ended answers are preserved as participant insights. They are not encoded as CIPQ indicators and do not affect CIPQ weighted policy pressures, frequencies, or severity analytics.');
   lines.push('');
   lines.push('Dataset Totals');
   lines.push(`- Responses: ${surveyResponses.length}`);
+  lines.push(`- Likert score responses: ${ratedRows.length}`);
+  lines.push(`- Open-ended insights: ${openRows.length}`);
   lines.push(`- Respondents: ${totalRespondents || 'Not specified'}`);
   lines.push(`- Questions: ${surveyQuestions.length}`);
-  lines.push(`- Overall mean: ${overall.mean} / 5.00`);
-  lines.push(`- Sentiment: ${surveySentiment(overall.mean)}`);
-  lines.push(`- Median: ${overall.median}`);
-  lines.push(`- Standard deviation: ${overall.sd}`);
-  lines.push(`- Agree/Strongly Agree: ${overall.agree_pct}%`);
-  lines.push(`- Disagree/Strongly Disagree: ${overall.disagree_pct}%`);
-  lines.push(`- Likert distribution: ${surveyLikertSummary(overall)}`);
+  if (overall) {
+    lines.push(`- Overall mean: ${overall.mean} / 5.00`);
+    lines.push(`- Sentiment: ${surveySentiment(overall.mean)}`);
+    lines.push(`- Median: ${overall.median}`);
+    lines.push(`- Standard deviation: ${overall.sd}`);
+    lines.push(`- Agree/Strongly Agree: ${overall.agree_pct}%`);
+    lines.push(`- Disagree/Strongly Disagree: ${overall.disagree_pct}%`);
+    lines.push(`- Likert distribution: ${surveyLikertSummary(overall)}`);
+  }
 
   if (dStats.length) {
     lines.push('');
@@ -480,15 +575,30 @@ function buildSurveyReportText() {
     });
   }
 
+  if (openQs.length) {
+    lines.push('');
+    lines.push('Open-Ended Participant Insights');
+    openQs.forEach(q => {
+      lines.push(`${q.code} | ${q.text} | ${q.responses.length} insight${q.responses.length !== 1 ? 's' : ''}`);
+      q.responses.forEach(r => {
+        const respondent = [r.respondent_id, r.respondent_group, r.region].filter(Boolean).join(' / ') || 'Unspecified respondent';
+        lines.push(`- ${respondent}: ${r.answer_text}`);
+      });
+    });
+  }
+
   return lines.join('\r\n');
 }
 
 function buildSurveyReportWordHtml() {
   const qs = questionStats();
+  const openQs = openEndedQuestionSummaries();
   const dStats = domainStats();
   const gStats = groupStats('respondent_group');
   const totalRespondents = new Set(surveyResponses.map(r => r.respondent_id).filter(Boolean)).size;
-  const overall = calcStats(surveyResponses.map(r => r.score));
+  const ratedRows = likertResponses();
+  const openRows = openEndedResponses();
+  const overall = calcStats(ratedRows.map(r => r.score));
 
   const domainRows = dStats.map(item => `<tr>
     ${surveyWordCell(item.domain)}
@@ -524,6 +634,19 @@ function buildSurveyReportWordHtml() {
     ${surveyWordCell(surveyLikertSummary(q.stats))}
   </tr>`).join('');
 
+  const openQuestionRows = openQs.map(q => `
+    <h3>${escHtml(q.code)} — ${escHtml(q.text)}</h3>
+    <table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;margin-bottom:14px;">
+      ${surveyWordHeader(['Respondent', 'Group', 'Region', 'Insight'])}
+      ${q.responses.map(r => `<tr>
+        ${surveyWordCell(r.respondent_id || '-')}
+        ${surveyWordCell(r.respondent_group || '-')}
+        ${surveyWordCell(r.region || '-')}
+        ${surveyWordCell(r.answer_text || '')}
+      </tr>`).join('')}
+    </table>
+  `).join('');
+
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -542,25 +665,27 @@ function buildSurveyReportWordHtml() {
 </head>
 <body>
   <h1>Survey Analytics Report</h1>
-  <div class="meta">Generated ${escHtml(new Date().toISOString())} | ${surveyResponses.length} Likert responses</div>
-  <div class="note">Survey results are a separate quantitative perception layer. They are not encoded as CIPQ indicators and do not affect CIPQ weighted policy pressures, frequencies, or severity analytics. Related CIPQ domains are used only for interpretive comparison.</div>
+  <div class="meta">Generated ${escHtml(new Date().toISOString())} | ${ratedRows.length} Likert responses | ${openRows.length} open-ended insights</div>
+  <div class="note">Survey results are a separate perception layer. Likert ratings are summarized quantitatively; open-ended answers are preserved as participant insights. They are not encoded as CIPQ indicators and do not affect CIPQ weighted policy pressures, frequencies, or severity analytics.</div>
 
   <h2>Dataset Totals</h2>
   <table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;">
     ${surveyWordHeader(['Metric', 'Value'])}
     <tr>${surveyWordCell('Responses')}${surveyWordCell(surveyResponses.length)}</tr>
+    <tr>${surveyWordCell('Likert score responses')}${surveyWordCell(ratedRows.length)}</tr>
+    <tr>${surveyWordCell('Open-ended insights')}${surveyWordCell(openRows.length)}</tr>
     <tr>${surveyWordCell('Respondents')}${surveyWordCell(totalRespondents || 'Not specified')}</tr>
     <tr>${surveyWordCell('Questions')}${surveyWordCell(surveyQuestions.length)}</tr>
+    ${overall ? `
     <tr>${surveyWordCell('Overall mean')}${surveyWordCell(`${overall.mean} / 5.00`)}</tr>
     <tr>${surveyWordCell('Sentiment')}${surveyWordCell(surveySentiment(overall.mean))}</tr>
     <tr>${surveyWordCell('Median')}${surveyWordCell(overall.median)}</tr>
     <tr>${surveyWordCell('Standard deviation')}${surveyWordCell(overall.sd)}</tr>
     <tr>${surveyWordCell('Agree / Strongly Agree')}${surveyWordCell(`${overall.agree_pct}%`)}</tr>
-    <tr>${surveyWordCell('Disagree / Strongly Disagree')}${surveyWordCell(`${overall.disagree_pct}%`)}</tr>
+    <tr>${surveyWordCell('Disagree / Strongly Disagree')}${surveyWordCell(`${overall.disagree_pct}%`)}</tr>` : ''}
   </table>
 
-  <h2>Overall Likert Distribution</h2>
-  ${surveyDistributionTable(overall)}
+  ${overall ? `<h2>Overall Likert Distribution</h2>${surveyDistributionTable(overall)}` : ''}
 
   ${dStats.length ? `
   <h2>Perception by Related CIPQ Domain</h2>
@@ -583,6 +708,10 @@ function buildSurveyReportWordHtml() {
     ${surveyWordHeader(['Code', 'Question', 'Related Domain', 'Category', 'N', 'Mean', 'Median', 'SD', 'Agree %', 'Distribution'])}
     ${questionRows}
   </table>` : ''}
+
+  ${openQs.length ? `
+  <h2>Open-Ended Participant Insights</h2>
+  ${openQuestionRows}` : ''}
 </body>
 </html>`;
 }
@@ -632,21 +761,22 @@ async function copySurveyReport() {
 
 function downloadQuestionsTemplate() {
   const rows = [
-    { code: 'SQ_01', text: 'Printing costs significantly affect publishing sustainability.', cipq_domain: 'Production', category: 'Production Costs' },
-    { code: 'SQ_02', text: 'Authors have adequate access to publishing opportunities.', cipq_domain: 'Access', category: 'Author Access' },
-    { code: 'SQ_03', text: 'Distribution networks adequately reach provincial readers.', cipq_domain: 'Distribution', category: 'Distribution' },
+    { code: 'SQ_01', text: 'Printing costs significantly affect publishing sustainability.', question_type: 'rating', cipq_domain: 'Production', category: 'Production Costs' },
+    { code: 'SQ_02', text: 'Authors have adequate access to publishing opportunities.', question_type: 'rating', cipq_domain: 'Access', category: 'Author Access' },
+    { code: 'SQ_03', text: 'What participant insight best explains current distribution challenges?', question_type: 'open_ended', cipq_domain: 'Distribution', category: 'Participant Insights' },
   ];
   downloadText(Papa.unparse(rows), 'survey_questions_template.csv', 'text/csv');
 }
 
 function downloadResponsesTemplate() {
-  const qCodes = surveyQuestions.length
-    ? surveyQuestions.map(q => q.code)
-    : ['SQ_01', 'SQ_02', 'SQ_03'];
+  const likertCodes = surveyQuestions.filter(isLikertQuestion).map(q => q.code);
+  const openCodes = surveyQuestions.filter(q => !isLikertQuestion(q)).map(q => q.code);
+  const qCodes = likertCodes.length ? likertCodes : ['SQ_01', 'SQ_02'];
+  const openCode = openCodes[0] || 'SQ_03';
   const rows = [
-    { respondent_id: 'R001', respondent_group: 'Publisher', region: 'NCR', source_id: 'SURVEY_01', question_code: qCodes[0], score: 4 },
-    { respondent_id: 'R001', respondent_group: 'Publisher', region: 'NCR', source_id: 'SURVEY_01', question_code: qCodes[1] || qCodes[0], score: 3 },
-    { respondent_id: 'R002', respondent_group: 'Author',    region: 'Region IV-A', source_id: 'SURVEY_01', question_code: qCodes[0], score: 5 },
+    { respondent_id: 'R001', respondent_group: 'Publisher', region: 'NCR', source_id: 'SURVEY_01', question_code: qCodes[0], score: 4, answer_text: '' },
+    { respondent_id: 'R001', respondent_group: 'Publisher', region: 'NCR', source_id: 'SURVEY_01', question_code: qCodes[1] || qCodes[0], score: 3, answer_text: '' },
+    { respondent_id: 'R002', respondent_group: 'Author',    region: 'Region IV-A', source_id: 'SURVEY_01', question_code: openCode, score: '', answer_text: 'Provincial access depends heavily on informal distribution networks.' },
   ];
   downloadText(Papa.unparse(rows), 'survey_responses_template.csv', 'text/csv');
 }
@@ -707,6 +837,16 @@ function surveyShowStatus(msg, isError) {
   setTimeout(() => { bar.style.display = 'none'; }, 5000);
 }
 
+function updateSurveyResponseInputMode() {
+  const code = (document.getElementById('sv_question_code')?.value || '').trim();
+  const q = questionForCode(code);
+  const type = surveyQuestionType(q);
+  const scoreWrap = document.getElementById('sv_score_group');
+  const textWrap = document.getElementById('sv_answer_text_group');
+  if (scoreWrap) scoreWrap.style.display = type === SURVEY_TYPES.OPEN ? 'none' : '';
+  if (textWrap) textWrap.style.display = type === SURVEY_TYPES.OPEN ? '' : 'none';
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // RENDER — CLIENT (read-only analytics)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -721,25 +861,35 @@ function renderSurveyClient() {
   }
 
   const qs    = questionStats();
+  const openQs = openEndedQuestionSummaries();
   const dStats = domainStats();
   const gStats = groupStats('respondent_group');
   const totalRespondents = new Set(surveyResponses.map(r => r.respondent_id).filter(Boolean)).size;
+  const ratedRows = likertResponses();
+  const openRows = openEndedResponses();
 
   // ── Summary cards ──
-  const overallScores = surveyResponses.map(r => r.score);
+  const typeSort = document.getElementById('surveyQuestionTypeSort')?.value || 'all';
+  const showRatings = typeSort === 'all' || typeSort === SURVEY_TYPES.LIKERT;
+  const showOpen = typeSort === 'all' || typeSort === SURVEY_TYPES.OPEN;
+  const overallScores = ratedRows.map(r => r.score);
   const overall = calcStats(overallScores);
-  const overallMean = parseFloat(overall.mean);
+  const overallMean = overall ? parseFloat(overall.mean) : null;
   const sentiment = overallMean >= 4.0 ? 'Positive' : overallMean >= 3.0 ? 'Neutral / Mixed' : 'Negative';
-  const sentColor = overallMean >= 4.0 ? '#27ae60' : overallMean >= 3.0 ? '#2980b9' : '#c0392b';
+  const sentColor = overall ? (overallMean >= 4.0 ? '#27ae60' : overallMean >= 3.0 ? '#2980b9' : '#c0392b') : 'var(--ink)';
 
   let html = `
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:2rem;">
     ${[
-      ['Responses', surveyResponses.length, ''],
+      ['Responses', typeSort === SURVEY_TYPES.LIKERT ? ratedRows.length : typeSort === SURVEY_TYPES.OPEN ? openRows.length : surveyResponses.length, ''],
+      ...(showRatings ? [['Likert Scores', ratedRows.length, '']] : []),
+      ...(showOpen ? [['Open Insights', openRows.length, '']] : []),
       ['Respondents', totalRespondents || '—', ''],
       ['Questions', surveyQuestions.length, ''],
-      ['Overall Mean', overall.mean, '/ 5.00'],
-      ['Sentiment', sentiment, '']
+      ...(showRatings ? [
+        ['Overall Mean', overall ? overall.mean : '-', overall ? '/ 5.00' : ''],
+        ['Sentiment', overall ? sentiment : '-', '']
+      ] : [])
     ].map(([label, val, sub]) => `
     <div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:1.1rem 1.25rem;">
       <div style="font-family:'IBM Plex Mono',monospace;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.09em;color:var(--muted);margin-bottom:0.35rem;">${label}</div>
@@ -749,6 +899,7 @@ function renderSurveyClient() {
   </div>`;
 
   // ── Overall Likert distribution ──
+  if (showRatings && overall) {
   html += `
   <div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:1.5rem;margin-bottom:2rem;">
     <div style="font-family:'IBM Plex Mono',monospace;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.09em;color:var(--muted);margin-bottom:0.75rem;">Overall Response Distribution</div>
@@ -761,9 +912,10 @@ function renderSurveyClient() {
       Agree/Strongly Agree: <strong>${overall.agree_pct}%</strong> &nbsp;|&nbsp; Disagree/Strongly Disagree: <strong>${overall.disagree_pct}%</strong> &nbsp;|&nbsp; SD: ${overall.sd}
     </div>
   </div>`;
+  }
 
   // ── By CIPQ Domain comparison (only if questions are mapped) ──
-  if (dStats.length) {
+  if (showRatings && dStats.length) {
     html += `
     <div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:1.5rem;margin-bottom:2rem;">
       <div style="font-family:'IBM Plex Mono',monospace;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.09em;color:var(--muted);margin-bottom:1rem;">Perception by CIPQ Domain <span style="font-size:0.62rem;opacity:0.6;font-style:italic;">(comparative only — not fed into CIPQ analytics)</span></div>
@@ -796,7 +948,7 @@ function renderSurveyClient() {
   }
 
   // ── By Respondent Group ──
-  if (gStats.length) {
+  if (showRatings && gStats.length) {
     html += `
     <div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:1.5rem;margin-bottom:2rem;">
       <div style="font-family:'IBM Plex Mono',monospace;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.09em;color:var(--muted);margin-bottom:1rem;">Perception by Respondent Group</div>
@@ -829,7 +981,7 @@ function renderSurveyClient() {
   }
 
   // ── Per-question table ──
-  if (qs.length) {
+  if (showRatings && qs.length) {
     // Group by category
     const categories = [...new Set(qs.map(q => q.category || 'General'))];
     html += `
@@ -874,10 +1026,41 @@ function renderSurveyClient() {
   }
 
   // ── Legend ──
+  if (showRatings && overall) {
   html += `
   <div style="font-family:'IBM Plex Mono',monospace;font-size:0.68rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:1rem;margin-top:0.5rem;">
     ${[[1,'#c0392b','1 — Strongly Disagree'],[2,'#e67e22','2 — Disagree'],[3,'#7f8c8d','3 — Neutral'],[4,'#2980b9','4 — Agree'],[5,'#27ae60','5 — Strongly Agree']].map(([,c,l])=>`<span><span style="display:inline-block;width:10px;height:10px;background:${c};border-radius:2px;margin-right:4px;vertical-align:middle;"></span>${l}</span>`).join('')}
   </div>`;
+  }
+
+  if (showOpen && openQs.length) {
+    html += `
+    <div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:1.5rem;margin-bottom:2rem;">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.09em;color:var(--muted);margin-bottom:1rem;">Open-Ended Participant Insights</div>
+      ${openQs.map(q => `
+        <div style="border-top:1px solid var(--border);padding-top:0.85rem;margin-top:0.85rem;">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:0.72rem;color:var(--muted);margin-bottom:0.35rem;">${escHtml(q.code)} - ${q.responses.length} insight${q.responses.length !== 1 ? 's' : ''}</div>
+          <div style="font-size:0.95rem;font-weight:600;margin-bottom:0.75rem;line-height:1.4;">${escHtml(q.text)}</div>
+          <div style="display:grid;gap:0.75rem;">
+            ${q.responses.map(r => `
+              <div style="border:1px solid #f0ece4;border-radius:8px;padding:0.8rem 0.9rem;background:#fdfbf7;">
+                <div style="font-family:'IBM Plex Mono',monospace;font-size:0.68rem;color:var(--muted);margin-bottom:0.35rem;">${escHtml([r.respondent_id, r.respondent_group, r.region].filter(Boolean).join(' / ') || 'Unspecified respondent')}</div>
+                <div style="font-size:0.9rem;line-height:1.5;">${escHtml(r.answer_text)}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `).join('')}
+    </div>`;
+  }
+
+  if (typeSort === SURVEY_TYPES.LIKERT && !overall) {
+    html += `<div class="no-data-msg">No rating survey responses yet.</div>`;
+  }
+
+  if (typeSort === SURVEY_TYPES.OPEN && !openQs.length) {
+    html += `<div class="no-data-msg">No open-ended survey responses yet.</div>`;
+  }
 
   el.innerHTML = html;
 }
@@ -900,6 +1083,7 @@ function renderSurveyAnalyst() {
         surveyQuestions.map(q => `<option value="${escHtml(q.code)}">${escHtml(q.code)} — ${escHtml(q.text.length > 55 ? q.text.substring(0,55)+'…' : q.text)}</option>`).join('')
       : `<option value="">— Add questions first —</option>`;
     if (current) qSelect.value = current;
+    updateSurveyResponseInputMode();
   }
 
   const qRows = surveyQuestions.length
@@ -909,6 +1093,7 @@ function renderSurveyAnalyst() {
         <tr style="border-bottom:1px solid var(--border);">
           <td style="padding:0.6rem 0.85rem;font-family:'IBM Plex Mono',monospace;font-size:0.8rem;font-weight:500;white-space:nowrap;">${escHtml(q.code)}</td>
           <td style="padding:0.6rem 0.85rem;font-size:0.88rem;line-height:1.45;">${escHtml(q.text)}</td>
+          <td style="padding:0.6rem 0.85rem;font-family:'IBM Plex Mono',monospace;font-size:0.76rem;color:var(--muted);">${isLikertQuestion(q) ? 'Rate 1-5' : 'Open ended'}</td>
           <td style="padding:0.6rem 0.85rem;">${domainPill(q.cipq_domain)}</td>
           <td style="padding:0.6rem 0.85rem;font-family:'IBM Plex Mono',monospace;font-size:0.76rem;color:var(--muted);">${escHtml(q.category || '—')}</td>
           <td style="padding:0.6rem 0.85rem;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:0.8rem;">${n}</td>
@@ -929,6 +1114,7 @@ function renderSurveyAnalyst() {
           <tr style="border-bottom:2px solid var(--border);">
             <th style="text-align:left;padding:0.5rem 0.85rem;font-family:'IBM Plex Mono',monospace;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);font-weight:500;">Code</th>
             <th style="text-align:left;padding:0.5rem 0.85rem;font-family:'IBM Plex Mono',monospace;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);font-weight:500;">Question</th>
+            <th style="text-align:left;padding:0.5rem 0.85rem;font-family:'IBM Plex Mono',monospace;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);font-weight:500;">Type</th>
             <th style="text-align:left;padding:0.5rem 0.85rem;font-family:'IBM Plex Mono',monospace;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);font-weight:500;">Domain</th>
             <th style="text-align:left;padding:0.5rem 0.85rem;font-family:'IBM Plex Mono',monospace;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);font-weight:500;">Category</th>
             <th style="text-align:center;padding:0.5rem 0.85rem;font-family:'IBM Plex Mono',monospace;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);font-weight:500;">Responses</th>
@@ -962,6 +1148,7 @@ Object.assign(window, {
   handleSurveyImport,
   handleSurveyQuestionsImport,
   handleSurveyResponsesImport,
+  updateSurveyResponseInputMode,
   addSurveyResponse,
   addSurveyQuestion,
   deleteSurveyQuestion,

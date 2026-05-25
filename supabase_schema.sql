@@ -87,6 +87,7 @@ create table if not exists public.survey_questions (
   id          uuid  primary key default gen_random_uuid(),
   code        text  not null unique,
   text        text  not null,
+  question_type text not null default 'likert' check (question_type in ('likert','open_ended')),
   cipq_domain text  check (cipq_domain in ('Creation','Production','Distribution','Access')),
   category    text,
   created_at  timestamptz not null default timezone('utc', now())
@@ -99,9 +100,36 @@ create table if not exists public.survey_responses (
   region           text,
   source_id        text,
   question_code    text    not null references public.survey_questions(code) on delete cascade,
-  score            integer not null check (score between 1 and 5),
+  score            integer check (score between 1 and 5),
+  answer_text      text,
   recorded_at      timestamptz not null default timezone('utc', now())
 );
+
+alter table public.survey_questions
+  add column if not exists question_type text not null default 'likert';
+
+alter table public.survey_questions
+  alter column question_type set default 'likert';
+
+update public.survey_questions
+  set question_type = 'likert'
+  where question_type is null;
+
+alter table public.survey_questions
+  alter column question_type set not null;
+
+alter table public.survey_questions
+  drop constraint if exists survey_questions_question_type_check;
+
+alter table public.survey_questions
+  add constraint survey_questions_question_type_check
+  check (question_type in ('likert','open_ended'));
+
+alter table public.survey_responses
+  add column if not exists answer_text text;
+
+alter table public.survey_responses
+  alter column score drop not null;
 
 create index if not exists survey_responses_qcode_idx on public.survey_responses (question_code);
 create index if not exists survey_responses_group_idx on public.survey_responses (respondent_group);

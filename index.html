@@ -823,6 +823,23 @@
     min-height: 140px;
     padding: 0.55rem 0.75rem;
   }
+  .survey-question-grid {
+    display: grid;
+    grid-template-columns: 150px minmax(260px, 1fr) 180px 220px 200px;
+    gap: 1.35rem;
+    align-items: start;
+    margin-bottom: 1.5rem;
+  }
+  .survey-question-grid .form-group label {
+    min-height: 2.15rem;
+    display: flex;
+    align-items: flex-start;
+    align-content: flex-start;
+  }
+  .survey-question-grid .form-group input,
+  .survey-question-grid .form-group select {
+    height: 52px;
+  }
   .multi-select-dropdown {
     position: relative;
   }
@@ -2101,8 +2118,16 @@
 
   <!-- ── Survey Analytics (Client View) ─────────────────────────────────── -->
   <div id="tab-survey" class="tab-panel" data-view="client">
-    <div class="section-title">Survey Analytics <span>Likert-scale quantitative perception data — parallel to CIPQ, not integrated</span></div>
+    <div class="section-title">Survey Analytics <span>Likert ratings and open-ended participant insights — parallel to CIPQ, not integrated</span></div>
     <div class="dashboard-actions">
+      <label style="display:flex;align-items:center;gap:0.5rem;font-family:'IBM Plex Mono',monospace;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">
+        Question Type
+        <select id="surveyQuestionTypeSort" onchange="renderSurveyClient()" style="min-height:38px;padding:0.45rem 0.7rem;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--ink);font-family:'IBM Plex Sans',sans-serif;font-size:0.86rem;text-transform:none;letter-spacing:0;">
+          <option value="all">All</option>
+          <option value="likert">Rating</option>
+          <option value="open_ended">Open-ended</option>
+        </select>
+      </label>
       <button class="btn btn-secondary" type="button" onclick="downloadSurveyReport()">Download Word Report</button>
       <button class="btn btn-secondary" type="button" onclick="copySurveyReport()">Copy Report Text</button>
       <button class="btn btn-secondary" type="button" onclick="exportSurveyCSV()">Export Responses CSV</button>
@@ -2124,7 +2149,7 @@
         <div class="upload-area" style="margin-bottom:0;" onclick="document.getElementById('surveyQuestionsFileInput').click()">
           <span class="icon">Q</span>
           <h3>Questions CSV</h3>
-          <p>Columns: <code>code, text, cipq_domain, category</code></p>
+          <p>Columns: <code>code, text, question_type, cipq_domain, category</code></p>
           <input type="file" id="surveyQuestionsFileInput" accept=".csv" onchange="handleSurveyQuestionsImport(event)" style="display:none;">
         </div>
       </div>
@@ -2133,7 +2158,7 @@
         <div class="upload-area" style="margin-bottom:0;" onclick="document.getElementById('surveyFileInput').click()">
           <span class="icon">R</span>
           <h3>Responses CSV</h3>
-          <p>Columns: <code>respondent_id, respondent_group, region, source_id, question_code, score</code></p>
+          <p>Columns: <code>respondent_id, respondent_group, region, source_id, question_code, score, answer_text</code></p>
           <input type="file" id="surveyFileInput" accept=".csv" onchange="handleSurveyResponsesImport(event)" style="display:none;">
         </div>
       </div>
@@ -2151,7 +2176,7 @@
     <div class="summary-shell" style="margin-bottom:1.5rem;">
       <div class="section-title" style="font-size:1.1rem;margin-top:0;border-bottom:1px solid var(--border);">Add Survey Question</div>
       <div class="form-note">Define each survey question with a short code, full text, and optional CIPQ domain mapping for comparison purposes only.</div>
-      <div style="display:grid;grid-template-columns:180px 1fr 220px 200px;gap:1.35rem;margin-bottom:1.5rem;">
+      <div class="survey-question-grid">
         <div class="form-group">
           <label>Question Code</label>
           <input type="text" id="sq_code" placeholder="e.g. SQ_01">
@@ -2159,6 +2184,13 @@
         <div class="form-group">
           <label>Question Text</label>
           <input type="text" id="sq_text" placeholder="e.g. Printing costs significantly affect publishing sustainability.">
+        </div>
+        <div class="form-group">
+          <label>Question Type</label>
+          <select id="sq_question_type">
+            <option value="likert">Rate 1-5</option>
+            <option value="open_ended">Open-ended</option>
+          </select>
         </div>
         <div class="form-group">
           <label>Related CIPQ Domain <span style="text-transform:none;letter-spacing:0;font-size:0.65rem;">(comparison only)</span></label>
@@ -2183,7 +2215,7 @@
     <!-- Add Individual Response (manual) -->
     <div class="summary-shell" style="margin-bottom:1.5rem;">
       <div class="section-title" style="font-size:1.1rem;margin-top:0;border-bottom:1px solid var(--border);">Add Individual Response</div>
-      <div class="form-note">Enter a single respondent's score for one question. Define questions first so they appear in the dropdown below.</div>
+      <div class="form-note">Enter one respondent's rating or open-ended answer for one question. Define questions first so they appear in the dropdown below.</div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1.35rem;margin-bottom:1rem;">
         <div class="form-group">
           <label>Respondent ID</label>
@@ -2218,11 +2250,11 @@
       <div style="display:grid;grid-template-columns:1fr 200px;gap:1.35rem;margin-bottom:1.5rem;">
         <div class="form-group">
           <label>Question</label>
-          <select id="sv_question_code">
+          <select id="sv_question_code" onchange="updateSurveyResponseInputMode()">
             <option value="">— Add questions first —</option>
           </select>
         </div>
-        <div class="form-group">
+        <div class="form-group" id="sv_score_group">
           <label>Score</label>
           <select id="sv_score">
             <option value="">— Select —</option>
@@ -2233,6 +2265,10 @@
             <option value="5">5 — Strongly Agree</option>
           </select>
         </div>
+      </div>
+      <div class="form-group" id="sv_answer_text_group" style="display:none;margin-bottom:1.5rem;">
+        <label>Open-Ended Answer</label>
+        <textarea id="sv_answer_text" rows="4" placeholder="Participant insight or sentence answer"></textarea>
       </div>
       <div class="actions-row" style="margin-bottom:0;">
         <button class="btn btn-primary" type="button" onclick="addSurveyResponse()">Add Response</button>
