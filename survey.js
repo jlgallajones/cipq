@@ -11,7 +11,7 @@ const SURVEY_TABLE     = 'survey_responses';
 const SURVEY_Q_TABLE   = 'survey_questions';
 const LIKERT_LABELS    = { 1:'Strongly Disagree', 2:'Disagree', 3:'Neutral', 4:'Agree', 5:'Strongly Agree' };
 const CIPQ_DOMAINS     = ['Creation', 'Production', 'Distribution', 'Access'];
-const SURVEY_TYPES     = { LIKERT:'likert', OPEN:'open_ended' };
+const SURVEY_TYPES     = { LIKERT:'likert', OPEN:'open_ended', MULTIPLE_CHOICE:'multiple_choice', CHECKBOX:'checkbox' };
 
 // ── In-memory store ──────────────────────────────────────────────────────────
 let surveyQuestions  = [];   // { id, code, text, question_type, cipq_domain, category }
@@ -23,13 +23,21 @@ function getSBUser() { return window.currentUser || null; }
 
 function normalizeQuestionType(value) {
   const type = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
-  return ['open', 'open_ended', 'openended', 'text', 'sentence', 'qualitative', 'insight'].includes(type)
-    ? SURVEY_TYPES.OPEN
-    : SURVEY_TYPES.LIKERT;
+  if (['open', 'open_ended', 'openended', 'text', 'sentence', 'qualitative', 'insight'].includes(type))
+    return SURVEY_TYPES.OPEN;
+  if (['multiple_choice', 'multiplechoice', 'mc', 'single_choice', 'singlechoice', 'select_one', 'select'].includes(type))
+    return SURVEY_TYPES.MULTIPLE_CHOICE;
+  if (['checkbox', 'check', 'multi_select', 'multiselect', 'select_all', 'select_multiple'].includes(type))
+    return SURVEY_TYPES.CHECKBOX;
+  return SURVEY_TYPES.LIKERT;
 }
 
 function surveyQuestionTypeLabel(question) {
-  return isLikertQuestion(question) ? 'rating' : SURVEY_TYPES.OPEN;
+  const t = surveyQuestionType(question);
+  if (t === SURVEY_TYPES.OPEN) return 'open_ended';
+  if (t === SURVEY_TYPES.MULTIPLE_CHOICE) return 'multiple_choice';
+  if (t === SURVEY_TYPES.CHECKBOX) return 'checkbox';
+  return 'rating';
 }
 
 function surveyQuestionType(question) {
@@ -38,6 +46,11 @@ function surveyQuestionType(question) {
 
 function isLikertQuestion(question) {
   return surveyQuestionType(question) === SURVEY_TYPES.LIKERT;
+}
+
+function isMultipleChoiceQuestion(question) {
+  const t = surveyQuestionType(question);
+  return t === SURVEY_TYPES.MULTIPLE_CHOICE || t === SURVEY_TYPES.CHECKBOX;
 }
 
 function questionForCode(code) {
@@ -53,17 +66,29 @@ function likertResponses() {
   return surveyResponses.filter(r => numericScore(r.score) !== null && isLikertQuestion(questionForCode(r.question_code)));
 }
 
+function multipleChoiceResponses() {
+  return surveyResponses.filter(r => {
+    const q = questionForCode(r.question_code);
+    return isMultipleChoiceQuestion(q) && String(r.answer_text || '').trim();
+  });
+}
+
 function openEndedResponses() {
   return surveyResponses.filter(r => {
     const q = questionForCode(r.question_code);
-    return !isLikertQuestion(q) || String(r.answer_text || '').trim();
-  }).filter(r => String(r.answer_text || '').trim());
+    if (!q) return false;
+    const t = surveyQuestionType(q);
+    return t === SURVEY_TYPES.OPEN && String(r.answer_text || '').trim();
+  });
 }
 
 function formatSurveySaveError(error) {
   const message = error?.message || String(error || 'Unknown error.');
   if (/relation .*survey_|does not exist|schema cache|could not find the table/i.test(message)) {
     return `${message} Run the survey table section in supabase_schema.sql, then refresh this dashboard.`;
+  }
+  if (/question_type_check|violates check constraint/i.test(message)) {
+    return `Question type not allowed by the database. Re-run supabase_schema.sql in Supabase to add support for multiple_choice and checkbox types, then try again.`;
   }
   return message;
 }
@@ -192,11 +217,13 @@ function handleSurveyResponsesImport(event) {
 
         if (inferredType === SURVEY_TYPES.LIKERT && score === null) continue;
         if (inferredType === SURVEY_TYPES.OPEN && !answer_text) continue;
+        if ((inferredType === SURVEY_TYPES.MULTIPLE_CHOICE || inferredType === SURVEY_TYPES.CHECKBOX) && !answer_text) continue;
 
         if (!existingQ) {
           unknownQuestions.set(question_code, inferredType);
         }
 
+        const isTextBased = inferredType === SURVEY_TYPES.OPEN || inferredType === SURVEY_TYPES.MULTIPLE_CHOICE || inferredType === SURVEY_TYPES.CHECKBOX;
         rows.push({
           respondent_id:    get(row, 'respondent_id'),
           respondent_group: get(row, 'respondent_group'),
@@ -204,7 +231,7 @@ function handleSurveyResponsesImport(event) {
           source_id:        get(row, 'source_id'),
           question_code,
           score: inferredType === SURVEY_TYPES.LIKERT ? score : null,
-          answer_text: inferredType === SURVEY_TYPES.OPEN ? answer_text : '',
+          answer_text: isTextBased ? answer_text : '',
           recorded_at: new Date().toISOString()
         });
       }
@@ -286,6 +313,7 @@ async function addSurveyResponse() {
   if (!question_code) { surveyShowStatus('Select or enter a question code.', true); return; }
   if (questionType === SURVEY_TYPES.LIKERT && scoreRaw === null) { surveyShowStatus('Score must be 1-5.', true); return; }
   if (questionType === SURVEY_TYPES.OPEN && !answer_text) { surveyShowStatus('Open-ended answers require participant insight text.', true); return; }
+  if ((questionType === SURVEY_TYPES.MULTIPLE_CHOICE || questionType === SURVEY_TYPES.CHECKBOX) && !answer_text) { surveyShowStatus('Please enter the selected choice(s).', true); return; }
 
   // Ensure question exists
   if (!selectedQuestion) {
@@ -296,7 +324,7 @@ async function addSurveyResponse() {
     respondent_id, respondent_group, region, source_id,
     question_code,
     score: questionType === SURVEY_TYPES.LIKERT ? scoreRaw : null,
-    answer_text: questionType === SURVEY_TYPES.OPEN ? answer_text : '',
+    answer_text: (questionType === SURVEY_TYPES.OPEN || questionType === SURVEY_TYPES.MULTIPLE_CHOICE || questionType === SURVEY_TYPES.CHECKBOX) ? answer_text : '',
     recorded_at: new Date().toISOString()
   }]);
 
@@ -401,10 +429,26 @@ function groupStats(groupField = 'respondent_group') {
 }
 
 function openEndedQuestionSummaries() {
-  return surveyQuestions.filter(q => !isLikertQuestion(q)).map(q => {
+  return surveyQuestions.filter(q => surveyQuestionType(q) === SURVEY_TYPES.OPEN).map(q => {
     const responses = openEndedResponses().filter(r => r.question_code === q.code);
     return { ...q, responses };
   }).filter(q => q.responses.length);
+}
+
+function multipleChoiceQuestionSummaries() {
+  return surveyQuestions.filter(isMultipleChoiceQuestion).map(q => {
+    const responses = multipleChoiceResponses().filter(r => r.question_code === q.code);
+    // Tally answer frequencies
+    const tally = {};
+    responses.forEach(r => {
+      const ans = String(r.answer_text || '').trim();
+      if (ans) tally[ans] = (tally[ans] || 0) + 1;
+    });
+    const choices = Object.entries(tally)
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, count]) => ({ label, count, pct: responses.length ? ((count / responses.length) * 100).toFixed(1) : '0.0' }));
+    return { ...q, responses, choices, n: responses.length };
+  }).filter(q => q.n > 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -763,20 +807,38 @@ function downloadQuestionsTemplate() {
   const rows = [
     { code: 'SQ_01', text: 'Printing costs significantly affect publishing sustainability.', question_type: 'rating', cipq_domain: 'Production', category: 'Production Costs' },
     { code: 'SQ_02', text: 'Authors have adequate access to publishing opportunities.', question_type: 'rating', cipq_domain: 'Access', category: 'Author Access' },
-    { code: 'SQ_03', text: 'What participant insight best explains current distribution challenges?', question_type: 'open_ended', cipq_domain: 'Distribution', category: 'Participant Insights' },
+    { code: 'SQ_03', text: 'What are the typical payment terms your company experiences? Public Sector', question_type: 'multiple_choice', cipq_domain: 'Distribution', category: 'Payment Terms' },
+    { code: 'SQ_04', text: 'Which distribution challenges does your company currently face? (Select all that apply)', question_type: 'checkbox', cipq_domain: 'Distribution', category: 'Distribution Challenges' },
+    { code: 'SQ_05', text: 'What participant insight best explains current distribution challenges?', question_type: 'open_ended', cipq_domain: 'Distribution', category: 'Participant Insights' },
   ];
   downloadText(Papa.unparse(rows), 'survey_questions_template.csv', 'text/csv');
 }
 
 function downloadResponsesTemplate() {
   const likertCodes = surveyQuestions.filter(isLikertQuestion).map(q => q.code);
-  const openCodes = surveyQuestions.filter(q => !isLikertQuestion(q)).map(q => q.code);
-  const qCodes = likertCodes.length ? likertCodes : ['SQ_01', 'SQ_02'];
-  const openCode = openCodes[0] || 'SQ_03';
+  const mcCodes     = surveyQuestions.filter(q => surveyQuestionType(q) === SURVEY_TYPES.MULTIPLE_CHOICE).map(q => q.code);
+  const cbCodes     = surveyQuestions.filter(q => surveyQuestionType(q) === SURVEY_TYPES.CHECKBOX).map(q => q.code);
+  const openCodes   = surveyQuestions.filter(q => surveyQuestionType(q) === SURVEY_TYPES.OPEN).map(q => q.code);
+
+  const qCodes   = likertCodes.length ? likertCodes : ['SQ_01', 'SQ_02'];
+  const mcCode   = mcCodes[0]   || 'SQ_03';
+  const cbCode   = cbCodes[0]   || 'SQ_04';
+  const openCode = openCodes[0] || 'SQ_05';
+
   const rows = [
-    { respondent_id: 'R001', respondent_group: 'Publisher', region: 'NCR', source_id: 'SURVEY_01', question_code: qCodes[0], score: 4, answer_text: '' },
-    { respondent_id: 'R001', respondent_group: 'Publisher', region: 'NCR', source_id: 'SURVEY_01', question_code: qCodes[1] || qCodes[0], score: 3, answer_text: '' },
-    { respondent_id: 'R002', respondent_group: 'Author',    region: 'Region IV-A', source_id: 'SURVEY_01', question_code: openCode, score: '', answer_text: 'Provincial access depends heavily on informal distribution networks.' },
+    // ── RATING (likert): fill score 1-5, leave answer_text blank ──
+    { respondent_id: 'R001', respondent_group: 'Publisher',  region: 'NCR',         source_id: 'SURVEY_01', question_code: qCodes[0],         score: 4,  answer_text: '',                                                              question_type_hint: 'rating' },
+    { respondent_id: 'R001', respondent_group: 'Publisher',  region: 'NCR',         source_id: 'SURVEY_01', question_code: qCodes[1]||qCodes[0], score: 3, answer_text: '',                                                              question_type_hint: 'rating' },
+    { respondent_id: 'R002', respondent_group: 'Author',     region: 'Region IV-A', source_id: 'SURVEY_01', question_code: qCodes[0],         score: 2,  answer_text: '',                                                              question_type_hint: 'rating' },
+    // ── MULTIPLE CHOICE: leave score blank, write the chosen option in answer_text (one row per respondent) ──
+    { respondent_id: 'R001', respondent_group: 'Publisher',  region: 'NCR',         source_id: 'SURVEY_01', question_code: mcCode,            score: '',  answer_text: '30-60 days',                                                    question_type_hint: 'multiple_choice' },
+    { respondent_id: 'R002', respondent_group: 'Author',     region: 'Region IV-A', source_id: 'SURVEY_01', question_code: mcCode,            score: '',  answer_text: 'More than 90 days',                                             question_type_hint: 'multiple_choice' },
+    // ── CHECKBOX: leave score blank, one row per selected option per respondent ──
+    { respondent_id: 'R001', respondent_group: 'Publisher',  region: 'NCR',         source_id: 'SURVEY_01', question_code: cbCode,            score: '',  answer_text: 'High logistics cost',                                           question_type_hint: 'checkbox' },
+    { respondent_id: 'R001', respondent_group: 'Publisher',  region: 'NCR',         source_id: 'SURVEY_01', question_code: cbCode,            score: '',  answer_text: 'Limited provincial reach',                                      question_type_hint: 'checkbox' },
+    { respondent_id: 'R002', respondent_group: 'Author',     region: 'Region IV-A', source_id: 'SURVEY_01', question_code: cbCode,            score: '',  answer_text: 'Limited provincial reach',                                      question_type_hint: 'checkbox' },
+    // ── OPEN-ENDED: leave score blank, write free text in answer_text ──
+    { respondent_id: 'R002', respondent_group: 'Author',     region: 'Region IV-A', source_id: 'SURVEY_01', question_code: openCode,          score: '',  answer_text: 'Provincial access depends heavily on informal networks.',        question_type_hint: 'open_ended' },
   ];
   downloadText(Papa.unparse(rows), 'survey_responses_template.csv', 'text/csv');
 }
@@ -785,8 +847,9 @@ function downloadResponsesTemplate() {
 function downloadSurveyTemplate() { downloadResponsesTemplate(); }
 
 function downloadText(content, filename, mime) {
+  const bom = mime === 'text/csv' ? '\uFEFF' : '';
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([content], { type: mime }));
+  a.href = URL.createObjectURL(new Blob([bom + content], { type: mime + ';charset=utf-8' }));
   a.download = filename;
   a.click();
 }
@@ -843,8 +906,9 @@ function updateSurveyResponseInputMode() {
   const type = surveyQuestionType(q);
   const scoreWrap = document.getElementById('sv_score_group');
   const textWrap = document.getElementById('sv_answer_text_group');
-  if (scoreWrap) scoreWrap.style.display = type === SURVEY_TYPES.OPEN ? 'none' : '';
-  if (textWrap) textWrap.style.display = type === SURVEY_TYPES.OPEN ? '' : 'none';
+  const isTextBased = type === SURVEY_TYPES.OPEN || type === SURVEY_TYPES.MULTIPLE_CHOICE || type === SURVEY_TYPES.CHECKBOX;
+  if (scoreWrap) scoreWrap.style.display = isTextBased ? 'none' : '';
+  if (textWrap) textWrap.style.display = isTextBased ? '' : 'none';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -862,6 +926,7 @@ function renderSurveyClient() {
 
   const qs    = questionStats();
   const openQs = openEndedQuestionSummaries();
+  const mcQs  = multipleChoiceQuestionSummaries();
   const dStats = domainStats();
   const gStats = groupStats('respondent_group');
   const totalRespondents = new Set(surveyResponses.map(r => r.respondent_id).filter(Boolean)).size;
@@ -882,7 +947,7 @@ function renderSurveyClient() {
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:2rem;">
     ${[
       ['Responses', typeSort === SURVEY_TYPES.LIKERT ? ratedRows.length : typeSort === SURVEY_TYPES.OPEN ? openRows.length : surveyResponses.length, ''],
-      ...(showRatings ? [['Likert Scores', ratedRows.length, '']] : []),
+      ...(showRatings ? [['Rating Scores', ratedRows.length, '']] : []),
       ...(showOpen ? [['Open Insights', openRows.length, '']] : []),
       ['Respondents', totalRespondents || '—', ''],
       ['Questions', surveyQuestions.length, ''],
@@ -910,6 +975,32 @@ function renderSurveyClient() {
     </div>
     <div style="margin-top:0.65rem;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;color:var(--muted);">
       Agree/Strongly Agree: <strong>${overall.agree_pct}%</strong> &nbsp;|&nbsp; Disagree/Strongly Disagree: <strong>${overall.disagree_pct}%</strong> &nbsp;|&nbsp; SD: ${overall.sd}
+    </div>
+  </div>`;
+  }
+
+  // ── Legend ──
+  if (showRatings && overall) {
+  html += `
+  <div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:1rem 1.5rem;margin-bottom:2rem;">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.09em;color:var(--muted);margin-bottom:0.75rem;">Likert Scale Legend</div>
+    <div style="display:flex;flex-wrap:wrap;gap:0.6rem;">
+      ${[
+        [1,'#c0392b','Strongly Disagree'],
+        [2,'#e67e22','Disagree'],
+        [3,'#7f8c8d','Neutral'],
+        [4,'#2980b9','Agree'],
+        [5,'#27ae60','Strongly Agree']
+      ].map(([v,c,l]) => `
+        <div style="display:flex;align-items:center;gap:0.5rem;background:${c}11;border:1px solid ${c}44;border-radius:8px;padding:0.4rem 0.85rem;min-width:fit-content;">
+          <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:${c};color:#fff;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;font-weight:700;flex-shrink:0;">${v}</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:#3a3530;font-weight:500;">${l}</span>
+        </div>`).join('')}
+    </div>
+    <div style="margin-top:0.75rem;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;color:var(--muted);line-height:1.5;">
+      <span style="color:#27ae60;font-weight:600;">Agree %</span> = scores 4 &amp; 5 &nbsp;·&nbsp;
+      <span style="color:#c0392b;font-weight:600;">Disagree %</span> = scores 1 &amp; 2 &nbsp;·&nbsp;
+      <span style="font-weight:500;">Mean dot color</span>: <span style="color:#27ae60;">●</span> ≥4.0 &nbsp;<span style="color:#2980b9;">●</span> ≥3.0 &nbsp;<span style="color:#c0392b;">●</span> &lt;2.5
     </div>
   </div>`;
   }
@@ -1025,12 +1116,32 @@ function renderSurveyClient() {
     html += `</div>`;
   }
 
-  // ── Legend ──
-  if (showRatings && overall) {
-  html += `
-  <div style="font-family:'IBM Plex Mono',monospace;font-size:0.68rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:1rem;margin-top:0.5rem;">
-    ${[[1,'#c0392b','1 — Strongly Disagree'],[2,'#e67e22','2 — Disagree'],[3,'#7f8c8d','3 — Neutral'],[4,'#2980b9','4 — Agree'],[5,'#27ae60','5 — Strongly Agree']].map(([,c,l])=>`<span><span style="display:inline-block;width:10px;height:10px;background:${c};border-radius:2px;margin-right:4px;vertical-align:middle;"></span>${l}</span>`).join('')}
-  </div>`;
+  // ── Multiple Choice / Checkbox summary ──
+  if (mcQs.length) {
+    html += `
+    <div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:1.5rem;margin-bottom:2rem;">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.09em;color:var(--muted);margin-bottom:1rem;">Multiple Choice Responses</div>
+      ${mcQs.map(q => `
+        <div style="border-top:1px solid var(--border);padding-top:1rem;margin-top:1rem;">
+          <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.3rem;flex-wrap:wrap;">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:0.72rem;color:var(--muted);">${escHtml(q.code)}</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:0.65rem;padding:0.1rem 0.5rem;border-radius:999px;background:#f0ece4;color:var(--muted);border:1px solid var(--border);">${surveyQuestionType(q) === SURVEY_TYPES.CHECKBOX ? 'checkbox' : 'multiple choice'}</span>
+            ${domainPill(q.cipq_domain)}
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:0.68rem;color:var(--muted);margin-left:auto;">${q.n} response${q.n !== 1 ? 's' : ''}</span>
+          </div>
+          <div style="font-size:0.95rem;font-weight:600;margin-bottom:0.85rem;line-height:1.4;">${escHtml(q.text)}</div>
+          <div style="display:grid;gap:0.45rem;">
+            ${q.choices.map((choice, i) => `
+              <div style="display:grid;grid-template-columns:minmax(140px,30%) 1fr auto;align-items:center;gap:0.75rem;">
+                <div style="font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:#3a3530;font-weight:${i === 0 ? '600' : '400'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escHtml(choice.label)}">${escHtml(choice.label)}</div>
+                <div style="background:#f0ece4;border-radius:4px;overflow:hidden;height:14px;">
+                  <div style="width:${choice.pct}%;height:100%;background:${i === 0 ? '#2a6b6e' : '#7f8c8d'};border-radius:4px;transition:width 0.3s;"></div>
+                </div>
+                <div style="font-family:'IBM Plex Mono',monospace;font-size:0.72rem;color:var(--muted);white-space:nowrap;text-align:right;">${choice.count} <span style="opacity:0.65;">(${choice.pct}%)</span></div>
+              </div>`).join('')}
+          </div>
+        </div>`).join('')}
+    </div>`;
   }
 
   if (showOpen && openQs.length) {
@@ -1093,7 +1204,7 @@ function renderSurveyAnalyst() {
         <tr style="border-bottom:1px solid var(--border);">
           <td style="padding:0.6rem 0.85rem;font-family:'IBM Plex Mono',monospace;font-size:0.8rem;font-weight:500;white-space:nowrap;">${escHtml(q.code)}</td>
           <td style="padding:0.6rem 0.85rem;font-size:0.88rem;line-height:1.45;">${escHtml(q.text)}</td>
-          <td style="padding:0.6rem 0.85rem;font-family:'IBM Plex Mono',monospace;font-size:0.76rem;color:var(--muted);">${isLikertQuestion(q) ? 'Rate 1-5' : 'Open ended'}</td>
+          <td style="padding:0.6rem 0.85rem;font-family:'IBM Plex Mono',monospace;font-size:0.76rem;color:var(--muted);">${isLikertQuestion(q) ? 'Rate 1–5' : isMultipleChoiceQuestion(q) ? (surveyQuestionType(q) === SURVEY_TYPES.CHECKBOX ? 'Checkbox' : 'Multiple choice') : 'Open ended'}</td>
           <td style="padding:0.6rem 0.85rem;">${domainPill(q.cipq_domain)}</td>
           <td style="padding:0.6rem 0.85rem;font-family:'IBM Plex Mono',monospace;font-size:0.76rem;color:var(--muted);">${escHtml(q.category || '—')}</td>
           <td style="padding:0.6rem 0.85rem;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:0.8rem;">${n}</td>

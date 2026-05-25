@@ -2125,6 +2125,7 @@
         <select id="surveyQuestionTypeSort" onchange="renderSurveyClient()" style="min-height:38px;padding:0.45rem 0.7rem;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--ink);font-family:'IBM Plex Sans',sans-serif;font-size:0.86rem;text-transform:none;letter-spacing:0;">
           <option value="all">All</option>
           <option value="likert">Rating</option>
+          <option value="multiple_choice">Multiple Choice</option>
           <option value="open_ended">Open-ended</option>
         </select>
       </label>
@@ -2188,7 +2189,9 @@
         <div class="form-group">
           <label>Question Type</label>
           <select id="sq_question_type">
-            <option value="likert">Rate 1-5</option>
+            <option value="likert">Rate 1–5 (Likert)</option>
+            <option value="multiple_choice">Multiple Choice</option>
+            <option value="checkbox">Checkbox (select all that apply)</option>
             <option value="open_ended">Open-ended</option>
           </select>
         </div>
@@ -2215,7 +2218,7 @@
     <!-- Add Individual Response (manual) -->
     <div class="summary-shell" style="margin-bottom:1.5rem;">
       <div class="section-title" style="font-size:1.1rem;margin-top:0;border-bottom:1px solid var(--border);">Add Individual Response</div>
-      <div class="form-note">Enter one respondent's rating or open-ended answer for one question. Define questions first so they appear in the dropdown below.</div>
+      <div class="form-note">Enter one respondent's answer for one question. For <strong>rating</strong> questions use the score dropdown. For <strong>multiple choice</strong>, <strong>checkbox</strong>, and <strong>open-ended</strong> questions type the answer in the text field. Define questions first so they appear in the dropdown below.</div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1.35rem;margin-bottom:1rem;">
         <div class="form-group">
           <label>Respondent ID</label>
@@ -2267,8 +2270,8 @@
         </div>
       </div>
       <div class="form-group" id="sv_answer_text_group" style="display:none;margin-bottom:1.5rem;">
-        <label>Open-Ended Answer</label>
-        <textarea id="sv_answer_text" rows="4" placeholder="Participant insight or sentence answer"></textarea>
+        <label>Answer / Selected Choice</label>
+        <textarea id="sv_answer_text" rows="3" placeholder="Type the answer, selected option, or participant insight"></textarea>
       </div>
       <div class="actions-row" style="margin-bottom:0;">
         <button class="btn btn-primary" type="button" onclick="addSurveyResponse()">Add Response</button>
