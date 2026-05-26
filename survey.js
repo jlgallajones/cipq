@@ -303,14 +303,31 @@ async function saveSurveyResponses(rows) {
     return;
   }
 
-  const { data, error } = await sb.from(SURVEY_TABLE).insert(rows).select();
-  if (error) {
-    surveyShowStatus(`Could not save responses: ${formatSurveySaveError(error)}`, true);
-    return;
+  // Insert in chunks of 200 to avoid Supabase payload size limits.
+  // A single large insert can silently drop rows or fail when the batch is too big.
+  const CHUNK_SIZE = 200;
+  let totalSaved = 0;
+  const allSaved = [];
+
+  for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + CHUNK_SIZE);
+    const { data, error } = await sb.from(SURVEY_TABLE).insert(chunk).select();
+    if (error) {
+      surveyShowStatus(`Error saving responses (chunk ${Math.floor(i / CHUNK_SIZE) + 1}): ${formatSurveySaveError(error)}`, true);
+      return;
+    }
+    allSaved.push(...(data || chunk));
+    totalSaved += chunk.length;
+    // Show live progress when uploading large batches
+    if (rows.length > CHUNK_SIZE) {
+      surveyShowStatus(`Saving… ${totalSaved} / ${rows.length} responses uploaded.`, false);
+    }
   }
-  surveyResponses.push(...(data || rows));
+
+  // Reload all responses from Supabase so counts are always accurate
+  surveyResponses = await fetchAllSurveyResponses(sb);
   renderSurveyTab();
-  surveyShowStatus(`${rows.length} responses imported and saved.`, false);
+  surveyShowStatus(`${totalSaved} responses imported and saved. Total in DB: ${surveyResponses.length}.`, false);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
