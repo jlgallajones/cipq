@@ -254,7 +254,7 @@ function handleSurveyResponsesImport(event) {
           question_code,
           score: inferredType === SURVEY_TYPES.LIKERT ? score : null,
           answer_text: isTextBased ? answer_text : '',
-          recorded_at: new Date().toISOString()
+          recorded_at: (() => { const raw = get(row, 'recorded_at') || get(row, 'date') || get(row, 'timestamp') || get(row, 'response_date'); return (raw && !isNaN(Date.parse(raw))) ? new Date(raw).toISOString() : new Date().toISOString(); })()
         });
       }
 
@@ -303,31 +303,32 @@ async function saveSurveyResponses(rows) {
     return;
   }
 
-  // Insert in chunks of 200 to avoid Supabase payload size limits.
-  // A single large insert can silently drop rows or fail when the batch is too big.
+  // Upsert in chunks of 200 to avoid Supabase payload limits.
+  // onConflict: 'respondent_id,question_code' means re-uploading the same CSV
+  // is safe — existing rows are updated, not duplicated.
   const CHUNK_SIZE = 200;
   let totalSaved = 0;
-  const allSaved = [];
 
   for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
     const chunk = rows.slice(i, i + CHUNK_SIZE);
-    const { data, error } = await sb.from(SURVEY_TABLE).insert(chunk).select();
+    const { error } = await sb
+      .from(SURVEY_TABLE)
+      .upsert(chunk, { onConflict: 'respondent_id,question_code', ignoreDuplicates: false });
+
     if (error) {
-      surveyShowStatus(`Error saving responses (chunk ${Math.floor(i / CHUNK_SIZE) + 1}): ${formatSurveySaveError(error)}`, true);
+      surveyShowStatus(`Error saving responses (batch ${Math.floor(i / CHUNK_SIZE) + 1}): ${formatSurveySaveError(error)}`, true);
       return;
     }
-    allSaved.push(...(data || chunk));
     totalSaved += chunk.length;
-    // Show live progress when uploading large batches
     if (rows.length > CHUNK_SIZE) {
       surveyShowStatus(`Saving… ${totalSaved} / ${rows.length} responses uploaded.`, false);
     }
   }
 
-  // Reload all responses from Supabase so counts are always accurate
+  // Reload full accurate count from Supabase after every import
   surveyResponses = await fetchAllSurveyResponses(sb);
   renderSurveyTab();
-  surveyShowStatus(`${totalSaved} responses imported and saved. Total in DB: ${surveyResponses.length}.`, false);
+  surveyShowStatus(`${totalSaved} responses processed. Total in DB: ${surveyResponses.length}.`, false);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
