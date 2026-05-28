@@ -32,6 +32,11 @@ function normalizeQuestionType(value) {
   return SURVEY_TYPES.LIKERT;
 }
 
+function normalizeSurveyDomain(value) {
+  const domain = String(value || '').trim().toLowerCase();
+  return CIPQ_DOMAINS.find(item => item.toLowerCase() === domain) || null;
+}
+
 function surveyQuestionTypeLabel(question) {
   const t = surveyQuestionType(question);
   if (t === SURVEY_TYPES.OPEN) return 'open_ended';
@@ -182,7 +187,7 @@ function handleSurveyQuestionsImport(event) {
           code:        (get('code') || '').trim().toUpperCase(),
           text:        (get('text') || '').trim(),
           question_type: normalizeQuestionType(get('question_type') || get('type')),
-          cipq_domain: CIPQ_DOMAINS.includes(domain) ? domain : null,
+          cipq_domain: normalizeSurveyDomain(domain),
           category:    (get('category') || '').trim() || 'Imported'
         };
       }).filter(q => q.code && q.text);
@@ -233,7 +238,9 @@ function handleSurveyResponsesImport(event) {
         const answer_text   = get(row, 'answer_text') || get(row, 'answer') || get(row, 'insight') || get(row, 'response_text') || get(row, 'text_response');
         const score         = numericScore(scoreRaw);
         const existingQ     = questionForCode(question_code);
-        const inferredType  = existingQ ? surveyQuestionType(existingQ) : (answer_text && score === null ? SURVEY_TYPES.OPEN : SURVEY_TYPES.LIKERT);
+        const rawTypeHint   = get(row, 'question_type') || get(row, 'question_type_hint') || get(row, 'type');
+        const typeHint      = rawTypeHint ? normalizeQuestionType(rawTypeHint) : '';
+        const inferredType  = existingQ ? surveyQuestionType(existingQ) : (typeHint || (answer_text && score === null ? SURVEY_TYPES.OPEN : SURVEY_TYPES.LIKERT));
 
         if (!question_code) continue;
 
@@ -254,7 +261,7 @@ function handleSurveyResponsesImport(event) {
           question_code,
           score: inferredType === SURVEY_TYPES.LIKERT ? score : null,
           answer_text: isTextBased ? answer_text : '',
-          recorded_at: (() => { const raw = get(row, 'recorded_at') || get(row, 'date') || get(row, 'timestamp') || get(row, 'response_date'); return (raw && !isNaN(Date.parse(raw))) ? new Date(raw).toISOString() : new Date().toISOString(); })()
+          recorded_at: new Date().toISOString()
         });
       }
 
@@ -303,32 +310,14 @@ async function saveSurveyResponses(rows) {
     return;
   }
 
-  // Upsert in chunks of 200 to avoid Supabase payload limits.
-  // onConflict: 'respondent_id,question_code' means re-uploading the same CSV
-  // is safe — existing rows are updated, not duplicated.
-  const CHUNK_SIZE = 200;
-  let totalSaved = 0;
-
-  for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
-    const chunk = rows.slice(i, i + CHUNK_SIZE);
-    const { error } = await sb
-      .from(SURVEY_TABLE)
-      .upsert(chunk, { onConflict: 'respondent_id,question_code', ignoreDuplicates: false });
-
-    if (error) {
-      surveyShowStatus(`Error saving responses (batch ${Math.floor(i / CHUNK_SIZE) + 1}): ${formatSurveySaveError(error)}`, true);
-      return;
-    }
-    totalSaved += chunk.length;
-    if (rows.length > CHUNK_SIZE) {
-      surveyShowStatus(`Saving… ${totalSaved} / ${rows.length} responses uploaded.`, false);
-    }
+  const { data, error } = await sb.from(SURVEY_TABLE).insert(rows).select();
+  if (error) {
+    surveyShowStatus(`Could not save responses: ${formatSurveySaveError(error)}`, true);
+    return;
   }
-
-  // Reload full accurate count from Supabase after every import
-  surveyResponses = await fetchAllSurveyResponses(sb);
+  surveyResponses.push(...(data || rows));
   renderSurveyTab();
-  surveyShowStatus(`${totalSaved} responses processed. Total in DB: ${surveyResponses.length}.`, false);
+  surveyShowStatus(`${rows.length} responses imported and saved.`, false);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -380,7 +369,7 @@ async function addSurveyQuestion() {
   const code       = (document.getElementById('sq_code')?.value || '').trim().toUpperCase();
   const text       = (document.getElementById('sq_text')?.value || '').trim();
   const question_type = normalizeQuestionType(document.getElementById('sq_question_type')?.value || '');
-  const cipq_domain = (document.getElementById('sq_domain')?.value || '') || null;
+  const cipq_domain = normalizeSurveyDomain(document.getElementById('sq_domain')?.value || '');
   const category   = (document.getElementById('sq_category')?.value || '').trim() || 'General';
 
   if (!code || !text) { surveyShowStatus('Question code and text are required.', true); return; }
@@ -459,9 +448,9 @@ function domainStats() {
 
 function groupStats(groupField = 'respondent_group') {
   const ratedRows = likertResponses();
-  const groups = [...new Set(ratedRows.map(r => r[groupField]).filter(Boolean))];
+  const groups = [...new Set(ratedRows.map(r => r[groupField] || 'Unspecified'))];
   return groups.map(group => {
-    const groupResps = ratedRows.filter(r => r[groupField] === group);
+    const groupResps = ratedRows.filter(r => (r[groupField] || 'Unspecified') === group);
     const scores = groupResps.map(r => r.score);
     const respondents = new Set(groupResps.map(r => r.respondent_id).filter(Boolean)).size;
     return { group, respondents, stats: calcStats(scores) };
@@ -518,7 +507,8 @@ function exportSurveyCSV() {
 function exportSurveySummaryCSV() {
   const qs = questionStats();
   const openQs = openEndedQuestionSummaries();
-  if (!qs.length && !openQs.length) { surveyShowStatus('No survey data to export.', true); return; }
+  const mcQs = multipleChoiceQuestionSummaries();
+  if (!qs.length && !openQs.length && !mcQs.length) { surveyShowStatus('No survey data to export.', true); return; }
   const rows = qs.map(q => ({
     code: q.code,
     text: q.text,
@@ -534,7 +524,8 @@ function exportSurveySummaryCSV() {
     disagree_pct: q.stats.disagree_pct,
     freq_1: q.stats.freq[1], freq_2: q.stats.freq[2], freq_3: q.stats.freq[3],
     freq_4: q.stats.freq[4], freq_5: q.stats.freq[5],
-    insight_count: ''
+    insight_count: '',
+    choices: ''
   })).concat(openQs.map(q => ({
     code: q.code,
     text: q.text,
@@ -549,10 +540,67 @@ function exportSurveySummaryCSV() {
     agree_pct: '',
     disagree_pct: '',
     freq_1: '', freq_2: '', freq_3: '', freq_4: '', freq_5: '',
-    insight_count: q.responses.length
+    insight_count: q.responses.length,
+    choices: ''
+  }))).concat(mcQs.map(q => ({
+    code: q.code,
+    text: q.text,
+    question_type: surveyQuestionType(q),
+    cipq_domain: q.cipq_domain || '',
+    category: q.category || '',
+    n: q.n,
+    mean: '',
+    median: '',
+    sd: '',
+    mode: '',
+    agree_pct: '',
+    disagree_pct: '',
+    freq_1: '', freq_2: '', freq_3: '', freq_4: '', freq_5: '',
+    insight_count: '',
+    choices: q.choices.map(choice => `${choice.label}: ${choice.count} (${choice.pct}%)`).join(' | ')
   })));
   const csv = Papa.unparse(rows);
   downloadText(csv, 'survey_summary.csv', 'text/csv');
+}
+
+function exportSurveyGroupSummaryCSV() {
+  const respondentGroups = groupStats('respondent_group').map(item => ({
+    grouping: 'respondent_group',
+    group: item.group,
+    respondents: item.respondents || '',
+    responses: item.stats.n,
+    mean: item.stats.mean,
+    median: item.stats.median,
+    sd: item.stats.sd,
+    mode: item.stats.mode,
+    agree_pct: item.stats.agree_pct,
+    disagree_pct: item.stats.disagree_pct,
+    freq_1: item.stats.freq[1],
+    freq_2: item.stats.freq[2],
+    freq_3: item.stats.freq[3],
+    freq_4: item.stats.freq[4],
+    freq_5: item.stats.freq[5]
+  }));
+  const regions = groupStats('region').map(item => ({
+    grouping: 'region',
+    group: item.group,
+    respondents: item.respondents || '',
+    responses: item.stats.n,
+    mean: item.stats.mean,
+    median: item.stats.median,
+    sd: item.stats.sd,
+    mode: item.stats.mode,
+    agree_pct: item.stats.agree_pct,
+    disagree_pct: item.stats.disagree_pct,
+    freq_1: item.stats.freq[1],
+    freq_2: item.stats.freq[2],
+    freq_3: item.stats.freq[3],
+    freq_4: item.stats.freq[4],
+    freq_5: item.stats.freq[5]
+  }));
+  const rows = respondentGroups.concat(regions);
+  if (!rows.length) { surveyShowStatus('No Likert responses available for group summaries.', true); return; }
+  downloadText(Papa.unparse(rows), 'survey_group_summary.csv', 'text/csv');
 }
 
 function surveyReportDateStamp() {
@@ -601,6 +649,7 @@ function buildSurveyReportText() {
 
   const qs = questionStats();
   const openQs = openEndedQuestionSummaries();
+  const mcQs = multipleChoiceQuestionSummaries();
   const dStats = domainStats();
   const gStats = groupStats('respondent_group');
   const totalRespondents = new Set(surveyResponses.map(r => r.respondent_id).filter(Boolean)).size;
@@ -659,6 +708,15 @@ function buildSurveyReportText() {
     });
   }
 
+  if (mcQs.length) {
+    lines.push('');
+    lines.push('Multiple Choice and Checkbox Results');
+    lines.push('Code | Question | Type | Related Domain | Responses | Choices');
+    mcQs.forEach(q => {
+      lines.push(`${q.code} | ${q.text} | ${surveyQuestionType(q)} | ${q.cipq_domain || '-'} | ${q.n} | ${q.choices.map(choice => `${choice.label}: ${choice.count} (${choice.pct}%)`).join('; ')}`);
+    });
+  }
+
   if (openQs.length) {
     lines.push('');
     lines.push('Open-Ended Participant Insights');
@@ -677,6 +735,7 @@ function buildSurveyReportText() {
 function buildSurveyReportWordHtml() {
   const qs = questionStats();
   const openQs = openEndedQuestionSummaries();
+  const mcQs = multipleChoiceQuestionSummaries();
   const dStats = domainStats();
   const gStats = groupStats('respondent_group');
   const totalRespondents = new Set(surveyResponses.map(r => r.respondent_id).filter(Boolean)).size;
@@ -716,6 +775,15 @@ function buildSurveyReportWordHtml() {
     ${surveyWordCell(q.stats.sd)}
     ${surveyWordCell(`${q.stats.agree_pct}%`)}
     ${surveyWordCell(surveyLikertSummary(q.stats))}
+  </tr>`).join('');
+
+  const multipleChoiceRows = mcQs.map(q => `<tr>
+    ${surveyWordCell(q.code)}
+    ${surveyWordCell(q.text)}
+    ${surveyWordCell(surveyQuestionType(q))}
+    ${surveyWordCell(q.cipq_domain || '-')}
+    ${surveyWordCell(q.n)}
+    ${surveyWordCell(q.choices.map(choice => `${choice.label}: ${choice.count} (${choice.pct}%)`).join(' | '))}
   </tr>`).join('');
 
   const openQuestionRows = openQs.map(q => `
@@ -791,6 +859,13 @@ function buildSurveyReportWordHtml() {
   <table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;">
     ${surveyWordHeader(['Code', 'Question', 'Related Domain', 'Category', 'N', 'Mean', 'Median', 'SD', 'Agree %', 'Distribution'])}
     ${questionRows}
+  </table>` : ''}
+
+  ${mcQs.length ? `
+  <h2>Multiple Choice and Checkbox Results</h2>
+  <table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;">
+    ${surveyWordHeader(['Code', 'Question', 'Type', 'Related Domain', 'Responses', 'Choices'])}
+    ${multipleChoiceRows}
   </table>` : ''}
 
   ${openQs.length ? `
@@ -976,6 +1051,7 @@ function renderSurveyClient() {
   // ── Summary cards ──
   const typeSort = document.getElementById('surveyQuestionTypeSort')?.value || 'all';
   const showRatings = typeSort === 'all' || typeSort === SURVEY_TYPES.LIKERT;
+  const showMultipleChoice = typeSort === 'all' || typeSort === SURVEY_TYPES.MULTIPLE_CHOICE;
   const showOpen = typeSort === 'all' || typeSort === SURVEY_TYPES.OPEN;
   const overallScores = ratedRows.map(r => r.score);
   const overall = calcStats(overallScores);
@@ -986,8 +1062,9 @@ function renderSurveyClient() {
   let html = `
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:2rem;">
     ${[
-      ['Responses', typeSort === SURVEY_TYPES.LIKERT ? ratedRows.length : typeSort === SURVEY_TYPES.OPEN ? openRows.length : surveyResponses.length, ''],
+      ['Responses', typeSort === SURVEY_TYPES.LIKERT ? ratedRows.length : typeSort === SURVEY_TYPES.MULTIPLE_CHOICE ? multipleChoiceResponses().length : typeSort === SURVEY_TYPES.OPEN ? openRows.length : surveyResponses.length, ''],
       ...(showRatings ? [['Rating Scores', ratedRows.length, '']] : []),
+      ...(showMultipleChoice ? [['Choice Responses', multipleChoiceResponses().length, '']] : []),
       ...(showOpen ? [['Open Insights', openRows.length, '']] : []),
       ['Respondents', totalRespondents || '—', ''],
       ['Questions', surveyQuestions.length, ''],
@@ -1157,7 +1234,7 @@ function renderSurveyClient() {
   }
 
   // ── Multiple Choice / Checkbox summary ──
-  if (mcQs.length) {
+  if (showMultipleChoice && mcQs.length) {
     html += `
     <div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:1.5rem;margin-bottom:2rem;">
       <div style="font-family:'IBM Plex Mono',monospace;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.09em;color:var(--muted);margin-bottom:1rem;">Multiple Choice Responses</div>
@@ -1211,6 +1288,10 @@ function renderSurveyClient() {
 
   if (typeSort === SURVEY_TYPES.OPEN && !openQs.length) {
     html += `<div class="no-data-msg">No open-ended survey responses yet.</div>`;
+  }
+
+  if (typeSort === SURVEY_TYPES.MULTIPLE_CHOICE && !mcQs.length) {
+    html += `<div class="no-data-msg">No multiple choice or checkbox survey responses yet.</div>`;
   }
 
   el.innerHTML = html;
@@ -1307,6 +1388,7 @@ Object.assign(window, {
   clearAllSurveyData,
   exportSurveyCSV,
   exportSurveySummaryCSV,
+  exportSurveyGroupSummaryCSV,
   downloadSurveyReport,
   copySurveyReport,
   downloadSurveyTemplate,

@@ -1731,7 +1731,7 @@
     <button class="btn btn-secondary" id="encoderViewBtn" type="button" onclick="setAppView('encoder')">Analyst View</button>
     <button class="btn btn-secondary active" id="clientViewBtn" type="button" onclick="setAppView('client')">Client View</button>
   </div>
-  <div class="view-switch-note">Analyst View keeps coding, validation, and dataset management together. Client View keeps CIPQ analytics central while adding lightweight Value Chain and PESTLE context for reporting.</div>
+  <div class="view-switch-note">Analyst View keeps CIPQ narrative coding and Survey Data management separate. Client View presents CIPQ Analytics and Survey Analytics as parallel layers for reporting, comparison, and triangulation.</div>
 </section>
 
 <div id="guestBanner" style="display:none; background:var(--gold); color:var(--ink); padding:0.65rem 2rem; font-family:'IBM Plex Mono',monospace; font-size:0.76rem; letter-spacing:0.05em; border-bottom:2px solid rgba(26,26,46,0.15);">
@@ -1927,7 +1927,6 @@
           <option value="">-- Select --</option>
           <option>FGD</option>
           <option>KII</option>
-          <option>Survey</option>
           <option>Document</option>
         </select>
       </div>
@@ -2125,7 +2124,7 @@
         <select id="surveyQuestionTypeSort" onchange="renderSurveyClient()" style="min-height:38px;padding:0.45rem 0.7rem;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--ink);font-family:'IBM Plex Sans',sans-serif;font-size:0.86rem;text-transform:none;letter-spacing:0;">
           <option value="all">All</option>
           <option value="likert">Rating</option>
-          <option value="multiple_choice">Multiple Choice</option>
+          <option value="multiple_choice">Multiple Choice / Checkbox</option>
           <option value="open_ended">Open-ended</option>
         </select>
       </label>
@@ -2133,6 +2132,7 @@
       <button class="btn btn-secondary" type="button" onclick="copySurveyReport()">Copy Report Text</button>
       <button class="btn btn-secondary" type="button" onclick="exportSurveyCSV()">Export Responses CSV</button>
       <button class="btn btn-secondary" type="button" onclick="exportSurveySummaryCSV()">Export Summary CSV</button>
+      <button class="btn btn-secondary" type="button" onclick="exportSurveyGroupSummaryCSV()">Export Group Summary</button>
     </div>
     <div id="surveyClientContent">
       <div class="no-data-msg">No survey data yet. Import responses in Analyst View → Survey Data.</div>
@@ -2170,6 +2170,7 @@
       <button class="btn btn-secondary" type="button" onclick="downloadResponsesTemplate()">Download Responses Template</button>
       <button class="btn btn-secondary" type="button" onclick="exportSurveyCSV()">Export Responses</button>
       <button class="btn btn-secondary" type="button" onclick="exportSurveySummaryCSV()">Export Summary</button>
+      <button class="btn btn-secondary" type="button" onclick="exportSurveyGroupSummaryCSV()">Export Group Summary</button>
       <button class="btn btn-secondary" type="button" onclick="if(confirm('Delete ALL survey data?')) clearAllSurveyData()">Clear All</button>
     </div>
 

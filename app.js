@@ -46,6 +46,7 @@ const DEFAULT_SIMULATION_STATE = {
 };
 const LEGACY_DOMAIN_MAP = { Governance: 'Production' };
 const SCORING_CONFIDENCE_OPTIONS = ['low', 'medium', 'high'];
+const CIPQ_SOURCE_TYPES = ['FGD', 'KII', 'Document'];
 const VALUE_CHAIN_STAGES = ['Development', 'Production', 'Distribution', 'Market Access'];
 const VALUE_CHAIN_ALIASES = { Access: 'Market Access', Market: 'Market Access' };
 const PESTLE_TAGS = ['Political', 'Economic', 'Social', 'Technological', 'Legal', 'Environmental'];
@@ -123,7 +124,7 @@ async function loadPublicSegmentsForGuest() {
     refreshAll();
     return;
   }
-  dataset = (data || []).map(mapDbRowToSegment);
+  dataset = mapRowsToCipqSegments(data);
   expandedSnippetIds.clear();
   refreshAll();
   if (dataset.length) showStatus(`Viewing ${dataset.length} published segment${dataset.length !== 1 ? 's' : ''} (read-only). Sign in to encode.`, false);
@@ -679,7 +680,7 @@ function normalizeSegmentRecord(record) {
     Stakeholder: record.Stakeholder || record.Stakeholder_Group || record.stakeholder || record.stakeholder_group || record['metadata.stakeholder_group'] || '',
     Respondent_Type: record.Respondent_Type || record.respondent_type || record['metadata.respondent_type'] || '',
     Region: record.Region || record.region || record['metadata.region'] || '',
-    Source_Type: record.Source_Type || record.source_type || record.Source || record['metadata.source_type'] || '',
+    Source_Type: normalizeCipqSourceType(record.Source_Type || record.source_type || record.Source || record['metadata.source_type'] || ''),
     Source_ID: record.Source_ID || record.source_id || record['metadata.source_id'] || '',
     Value_Chain_Stage: VALUE_CHAIN_STAGES.includes(valueChainStage) ? valueChainStage : '',
     PESTLE_Tags: pestleTags,
@@ -692,6 +693,20 @@ function normalizeSegmentRecord(record) {
     Created_At: createdAt,
     Updated_At: updatedAt
   };
+}
+
+function isSurveySourceType(value) {
+  return String(value || '').trim().toLowerCase() === 'survey';
+}
+
+function normalizeCipqSourceType(value) {
+  const raw = String(value || '').trim();
+  const lower = raw.toLowerCase();
+  if (lower === 'fgd' || lower === 'focus group' || lower === 'focus group discussion') return 'FGD';
+  if (lower === 'kii' || lower === 'key informant' || lower === 'key informant interview') return 'KII';
+  if (lower === 'document' || lower === 'document review') return 'Document';
+  if (lower === 'survey') return 'Survey';
+  return raw;
 }
 
 function toInterpretiveRecord(record) {
@@ -802,6 +817,12 @@ function mapDbRowToSegment(row) {
   });
 }
 
+function mapRowsToCipqSegments(rows) {
+  return (rows || [])
+    .map(mapDbRowToSegment)
+    .filter(record => !isSurveySourceType(record.Source_Type));
+}
+
 function getMissingSupabaseColumn(error) {
   const message = error?.message || '';
   const quotedMatch = message.match(/'([a-z0-9_]+)' column/i);
@@ -860,6 +881,10 @@ function validateRecord(record, strict = false) {
   if (!record.Stakeholder) issues.push('Missing stakeholder group.');
   if (!record.Region) issues.push('Missing region.');
   if (!record.Source_Type) issues.push('Missing source type.');
+  if (isSurveySourceType(record.Source_Type)) issues.push('Survey responses belong in the separate Survey Data module and are not encoded as CIPQ indicators.');
+  if (record.Source_Type && !isSurveySourceType(record.Source_Type) && !CIPQ_SOURCE_TYPES.includes(record.Source_Type)) {
+    issues.push('Source type must be FGD, KII, or Document for CIPQ narrative coding.');
+  }
   if (!record.Source_ID) issues.push('Missing source ID.');
   if (record.Value_Chain_Stage && !VALUE_CHAIN_STAGES.includes(record.Value_Chain_Stage)) issues.push('Value chain stage must be Development, Production, Distribution, or Market Access.');
   const invalidPestleTags = (record.PESTLE_Tags || []).filter(tag => !PESTLE_TAGS.includes(tag));
@@ -1097,7 +1122,7 @@ async function loadSegmentsFromSupabase(options = {}) {
     return;
   }
 
-  dataset = (data || []).map(mapDbRowToSegment);
+  dataset = mapRowsToCipqSegments(data);
   expandedSnippetIds.clear();
   refreshAll();
   setCloudSyncing(false);
@@ -1449,6 +1474,7 @@ function parseCSV(file) {
     complete: async results => {
       const rows = results.data || [];
       const importedSegments = [];
+      let skippedSurveyRows = 0;
       const takenIds = new Set(dataset.map(record => record.Segment_ID));
 
       rows.forEach((row, index) => {
@@ -1460,6 +1486,10 @@ function parseCSV(file) {
         if (!record.Source_ID) record.Source_ID = row.Session_ID || row.session_id || '';
         if (!record.Segment_ID) record.Segment_ID = ensureUniqueSegmentId(`IMP_${Date.now()}_${index + 1}`, takenIds);
         else takenIds.add(record.Segment_ID);
+        if (isSurveySourceType(record.Source_Type)) {
+          skippedSurveyRows += 1;
+          return;
+        }
         if (!VALID_DOMAINS.includes(record.CIPQ_Domain) || !record.Indicator_Code || !Number.isFinite(record.Severity)) return;
         importedSegments.push(record);
       });
@@ -1510,7 +1540,8 @@ function parseCSV(file) {
       updateUploadMeta(file.name, true);
       const syncLabel = supabaseClient && currentUser ? ' and saved to Supabase' : ' locally';
       const replaceLabel = replacementPlan.duplicateSummaries.length ? ` Replaced ${replacementPlan.duplicateSummaries.length} duplicate${replacementPlan.duplicateSummaries.length !== 1 ? 's' : ''}.` : '';
-      showStatus(`Imported ${replacementPlan.recordsToSave.length} segments from CSV${syncLabel}. Total: ${dataset.length}.${replaceLabel}`, false);
+      const skippedLabel = skippedSurveyRows ? ` Skipped ${skippedSurveyRows} survey row${skippedSurveyRows !== 1 ? 's' : ''}; import those in Survey Data.` : '';
+      showStatus(`Imported ${replacementPlan.recordsToSave.length} segments from CSV${syncLabel}. Total: ${dataset.length}.${replaceLabel}${skippedLabel}`, false);
       refreshAll();
     },
     error: () => showStatus('Error parsing CSV file.', true)
