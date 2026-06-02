@@ -87,7 +87,7 @@ create table if not exists public.survey_questions (
   id          uuid  primary key default gen_random_uuid(),
   code        text  not null unique,
   text        text  not null,
-  question_type text not null default 'likert' check (question_type in ('likert','open_ended')),
+  question_type text not null default 'likert' check (question_type in ('likert','open_ended','multiple_choice','checkbox')),
   cipq_domain text  check (cipq_domain in ('Creation','Production','Distribution','Access')),
   category    text,
   created_at  timestamptz not null default timezone('utc', now())
@@ -123,7 +123,7 @@ alter table public.survey_questions
 
 alter table public.survey_questions
   add constraint survey_questions_question_type_check
-  check (question_type in ('likert','open_ended'));
+  check (question_type in ('likert','open_ended','multiple_choice','checkbox'));
 
 alter table public.survey_responses
   add column if not exists answer_text text;
